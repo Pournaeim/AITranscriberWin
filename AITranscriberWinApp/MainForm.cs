@@ -34,6 +34,7 @@ namespace AITranscriberWinApp
             Directory.CreateDirectory(_recordingsDirectory);
             Directory.CreateDirectory(_transcriptsDirectory);
             txtApiKey.Text = Settings.Default.OpenAIApiKey;
+            UpdateStatus("Ready.");
         }
 
         private void btnSaveKey_Click(object sender, EventArgs e)
@@ -57,13 +58,6 @@ namespace AITranscriberWinApp
 
         private void StartRecording()
         {
-            var apiKey = GetApiKey();
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                MessageBox.Show("Please provide your OpenAI API key before recording.", "Missing API Key", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
             try
             {
                 _currentRecordingPath = Path.Combine(_recordingsDirectory, $"recording_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
@@ -74,7 +68,7 @@ namespace AITranscriberWinApp
                 _waveIn.StartRecording();
                 _isRecording = true;
                 btnToggleRecording.Text = "Stop Recording";
-                lblStatus.Text = "Status: Recording...";
+                UpdateStatus("Recording...");
             }
             catch (Exception ex)
             {
@@ -88,7 +82,7 @@ namespace AITranscriberWinApp
             try
             {
                 _waveIn?.StopRecording();
-                lblStatus.Text = "Status: Processing audio...";
+                UpdateStatus("Processing audio...");
             }
             catch (Exception ex)
             {
@@ -126,14 +120,15 @@ namespace AITranscriberWinApp
         {
             if (string.IsNullOrWhiteSpace(audioPath) || !File.Exists(audioPath))
             {
-                lblStatus.Text = "Status: No audio file found.";
+                UpdateStatus("No audio file found.");
                 return;
             }
 
             var apiKey = GetApiKey();
             if (string.IsNullOrWhiteSpace(apiKey))
             {
-                lblStatus.Text = "Status: Missing API key.";
+                UpdateStatus("Recording saved. Provide an API key to transcribe.");
+                MessageBox.Show("Recording saved successfully. Enter your OpenAI API key and click \"Transcribe Audio File...\" to process the recording.", "API Key Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -146,10 +141,10 @@ namespace AITranscriberWinApp
 
             try
             {
-                lblStatus.Text = "Status: Uploading to Whisper...";
+                UpdateStatus("Uploading to Whisper...");
                 var transcription = await _transcriptionService.TranscribeAsync(audioPath, apiKey, token);
 
-                lblStatus.Text = "Status: Translating to Persian...";
+                UpdateStatus("Translating to Persian...");
                 try
                 {
                     var translation = await _translationService.TranslateToPersianAsync(transcription.Text, token);
@@ -165,17 +160,17 @@ namespace AITranscriberWinApp
                 txtTranslation.Text = transcription.Translation;
 
                 SaveTranscript(audioPath, transcription);
-                lblStatus.Text = string.IsNullOrEmpty(transcription.Translation)
-                    ? "Status: Completed (translation unavailable)."
-                    : "Status: Completed.";
+                UpdateStatus(string.IsNullOrEmpty(transcription.Translation)
+                    ? "Completed (translation unavailable)."
+                    : "Completed.");
             }
             catch (OperationCanceledException)
             {
-                lblStatus.Text = "Status: Operation cancelled.";
+                UpdateStatus("Operation cancelled.");
             }
             catch (Exception ex)
             {
-                lblStatus.Text = "Status: Failed.";
+                UpdateStatus("Failed.");
                 MessageBox.Show($"Processing failed: {ex.Message}", "Processing Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -193,6 +188,8 @@ namespace AITranscriberWinApp
                 var baseFileName = Path.GetFileNameWithoutExtension(audioPath);
                 var textOutputPath = Path.Combine(_transcriptsDirectory, $"{baseFileName}.txt");
                 var markdownOutputPath = Path.Combine(_transcriptsDirectory, $"{baseFileName}.md");
+
+                Directory.CreateDirectory(_transcriptsDirectory);
 
                 var builder = new StringBuilder();
                 builder.AppendLine($"Recorded File: {audioPath}");
@@ -223,6 +220,42 @@ namespace AITranscriberWinApp
             {
                 MessageBox.Show($"Unable to save transcript: {ex.Message}", "Save Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        private async void btnSelectAudio_Click(object sender, EventArgs e)
+        {
+            if (_isRecording)
+            {
+                MessageBox.Show("Stop the current recording before selecting another audio file.", "Recording In Progress", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "Audio Files (*.wav;*.mp3;*.m4a;*.aac)|*.wav;*.mp3;*.m4a;*.aac|All Files (*.*)|*.*";
+                dialog.Title = "Select audio file for transcription";
+
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    _currentRecordingPath = dialog.FileName;
+                    try
+                    {
+                        btnSelectAudio.Enabled = false;
+                        btnToggleRecording.Enabled = false;
+                        await ProcessRecordingAsync(dialog.FileName);
+                    }
+                    finally
+                    {
+                        btnSelectAudio.Enabled = true;
+                        btnToggleRecording.Enabled = true;
+                    }
+                }
+            }
+        }
+
+        private void UpdateStatus(string message)
+        {
+            lblStatus.Text = $"Status: {message}";
         }
 
         private string GetApiKey()

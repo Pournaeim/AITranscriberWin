@@ -36,20 +36,7 @@ namespace AITranscriberWinApp.Services
 
                 using (var form = new MultipartFormDataContent())
                 {
-                    byte[] fileBytes;
-                    using (var fs = new FileStream(audioPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
-                    {
-                        fileBytes = new byte[fs.Length];
-                        int bytesRead = 0;
-                        while (bytesRead < fileBytes.Length)
-                        {
-                            int read = await fs.ReadAsync(fileBytes, bytesRead, fileBytes.Length - bytesRead, cancellationToken).ConfigureAwait(false);
-                            if (read == 0)
-                                break;
-                            bytesRead += read;
-                        }
-                    }
-
+                    var fileBytes = await File.ReadAllBytesAsync(audioPath, cancellationToken).ConfigureAwait(false);
                     var fileContent = new ByteArrayContent(fileBytes);
                     fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
 
