@@ -27,8 +27,10 @@ namespace AITranscriberWinApp
         public MainForm()
         {
             InitializeComponent();
-            _recordingsDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AITranscriberWin", "Recordings");
-            _transcriptsDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AITranscriberWin", "Transcripts");
+            var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            var appRoot = Path.Combine(documentsPath, "AITranscriberWin");
+            _recordingsDirectory = Path.Combine(appRoot, "Recordings");
+            _transcriptsDirectory = Path.Combine(appRoot, "Transcripts");
             Directory.CreateDirectory(_recordingsDirectory);
             Directory.CreateDirectory(_transcriptsDirectory);
             txtApiKey.Text = Settings.Default.OpenAIApiKey;
