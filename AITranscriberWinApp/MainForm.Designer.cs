@@ -119,7 +119,7 @@ namespace AITranscriberWinApp
             // txtTranslation
             //
             this.txtTranslation.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
-            | System.Windows.Forms.AnchorStyles.Right)));
+            | System.Windows.Forms.AnchorStyles.Right))));
             this.txtTranslation.Location = new System.Drawing.Point(348, 110);
             this.txtTranslation.Multiline = true;
             this.txtTranslation.Name = "txtTranslation";
