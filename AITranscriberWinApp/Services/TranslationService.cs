@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -20,6 +21,7 @@ namespace AITranscriberWinApp.Services
         public TranslationService(Uri endpoint)
         {
             _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
             _httpClient = new HttpClient();
         }
 
