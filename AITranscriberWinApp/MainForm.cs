@@ -15,6 +15,8 @@ namespace AITranscriberWinApp
     {
         private readonly OpenAiTranscriptionService _transcriptionService = new OpenAiTranscriptionService();
         private readonly TranslationService _translationService = new TranslationService();
+        private const int FileReadyMaxAttempts = 10;
+        private static readonly TimeSpan FileReadyRetryDelay = TimeSpan.FromMilliseconds(200);
         private readonly string _recordingsDirectory;
         private readonly string _transcriptsDirectory;
 
@@ -61,7 +63,10 @@ namespace AITranscriberWinApp
             try
             {
                 _currentRecordingPath = Path.Combine(_recordingsDirectory, $"recording_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
-                _waveIn = new WaveInEvent();
+                _waveIn = new WaveInEvent
+                {
+                    WaveFormat = new WaveFormat(16000, 1)
+                };
                 _waveIn.DataAvailable += OnDataAvailable;
                 _waveIn.RecordingStopped += OnRecordingStopped;
                 _waveWriter = new WaveFileWriter(_currentRecordingPath, _waveIn.WaveFormat);
@@ -141,6 +146,21 @@ namespace AITranscriberWinApp
 
             try
             {
+                if (!await WaitForFileReadyAsync(audioPath, token))
+                {
+                    UpdateStatus("Audio file unavailable.");
+                    MessageBox.Show("The recorded audio file is not accessible yet. Please try recording again.", "Audio File Busy", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var fileInfo = new FileInfo(audioPath);
+                if (!fileInfo.Exists || fileInfo.Length < 100)
+                {
+                    UpdateStatus("Audio file is empty.");
+                    MessageBox.Show("The recorded audio appears to be empty. Please ensure your microphone is working and try again.", "Empty Audio", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 UpdateStatus("Uploading to Whisper...");
                 var transcription = await _transcriptionService.TranscribeAsync(audioPath, apiKey, token);
 
@@ -179,6 +199,34 @@ namespace AITranscriberWinApp
                 _processingCts = null;
                 _currentRecordingPath = null;
             }
+        }
+
+        private async Task<bool> WaitForFileReadyAsync(string audioPath, CancellationToken token)
+        {
+            for (var attempt = 0; attempt < FileReadyMaxAttempts; attempt++)
+            {
+                token.ThrowIfCancellationRequested();
+
+                try
+                {
+                    using (File.Open(audioPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                    {
+                        return true;
+                    }
+                }
+                catch (IOException)
+                {
+                    // File is still being written to disk. Retry shortly.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Some antivirus tools may keep the file locked briefly. Retry.
+                }
+
+                await Task.Delay(FileReadyRetryDelay, token);
+            }
+
+            return false;
         }
 
         private void SaveTranscript(string audioPath, TranscriptionResult transcription)
