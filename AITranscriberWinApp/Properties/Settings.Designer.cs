@@ -38,5 +38,20 @@ namespace AITranscriberWinApp.Properties
                 this["OpenAIApiKey"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("https://translate.argosopentech.com/translate")]
+        public string TranslationEndpoint
+        {
+            get
+            {
+                return ((string)(this["TranslationEndpoint"]));
+            }
+            set
+            {
+                this["TranslationEndpoint"] = value;
+            }
+        }
     }
 }
