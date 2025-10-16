@@ -13,8 +13,18 @@ namespace AITranscriberWinApp
 {
     public partial class MainForm : Form
     {
+        private enum TranslationEndpointConfiguration
+        {
+            Disabled,
+            Configured,
+            Invalid
+        }
+
         private readonly OpenAiTranscriptionService _transcriptionService = new OpenAiTranscriptionService();
-        private readonly TranslationService _translationService = new TranslationService();
+        private TranslationService _translationService;
+        private TranslationEndpointConfiguration _translationEndpointStatus = TranslationEndpointConfiguration.Disabled;
+        private const string TranslationDisabledMessage = "Translation disabled. Provide a translation service URL in Settings to enable it.";
+        private const string TranslationInvalidMessage = "Translation disabled until a valid service URL is saved.";
         private const int FileReadyMaxAttempts = 10;
         private static readonly TimeSpan FileReadyRetryDelay = TimeSpan.FromMilliseconds(200);
         private readonly string _recordingsDirectory;
@@ -36,14 +46,84 @@ namespace AITranscriberWinApp
             Directory.CreateDirectory(_recordingsDirectory);
             Directory.CreateDirectory(_transcriptsDirectory);
             txtApiKey.Text = Settings.Default.OpenAIApiKey;
-            UpdateStatus("Ready.");
+            var savedEndpoint = Settings.Default.TranslationEndpoint;
+            txtTranslationEndpoint.Text = savedEndpoint;
+            var endpointStatus = ApplyTranslationEndpoint(savedEndpoint, showFeedback: false);
+            string statusMessage;
+            string translationHint = string.Empty;
+
+            switch (endpointStatus)
+            {
+                case TranslationEndpointConfiguration.Configured:
+                    statusMessage = "Ready.";
+                    break;
+                case TranslationEndpointConfiguration.Disabled:
+                    statusMessage = "Ready (translation disabled).";
+                    translationHint = TranslationDisabledMessage;
+                    break;
+                case TranslationEndpointConfiguration.Invalid:
+                    statusMessage = "Ready (translation disabled: invalid translation URL).";
+                    translationHint = TranslationInvalidMessage;
+                    break;
+                default:
+                    statusMessage = "Ready.";
+                    break;
+            }
+
+            UpdateStatus(statusMessage);
+
+            if (!string.IsNullOrEmpty(translationHint))
+            {
+                txtTranslation.Text = translationHint;
+            }
         }
 
         private void btnSaveKey_Click(object sender, EventArgs e)
         {
-            Settings.Default.OpenAIApiKey = txtApiKey.Text.Trim();
+            var apiKey = txtApiKey.Text.Trim();
+            var endpointText = txtTranslationEndpoint.Text?.Trim() ?? string.Empty;
+            txtTranslationEndpoint.Text = endpointText;
+
+            var endpointStatus = ApplyTranslationEndpoint(endpointText, showFeedback: true);
+            if (endpointStatus == TranslationEndpointConfiguration.Invalid)
+            {
+                txtTranslation.Text = TranslationInvalidMessage;
+                return;
+            }
+
+            Settings.Default.OpenAIApiKey = apiKey;
+            Settings.Default.TranslationEndpoint = endpointText;
             Settings.Default.Save();
-            MessageBox.Show("API key saved locally for this user.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            var message = endpointStatus == TranslationEndpointConfiguration.Configured
+                ? "Settings saved. Translation is enabled."
+                : "Settings saved. Translation is disabled.";
+
+            MessageBox.Show(message, "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            if (!_isRecording && _processingCts == null)
+            {
+                UpdateStatus(endpointStatus == TranslationEndpointConfiguration.Configured
+                    ? "Ready."
+                    : "Ready (translation disabled)."
+                );
+            }
+
+            if (endpointStatus == TranslationEndpointConfiguration.Configured)
+            {
+                if (txtTranslation.Text == TranslationDisabledMessage || txtTranslation.Text == TranslationInvalidMessage)
+                {
+                    txtTranslation.Clear();
+                }
+            }
+            else if (endpointStatus == TranslationEndpointConfiguration.Disabled)
+            {
+                txtTranslation.Text = TranslationDisabledMessage;
+            }
+            else
+            {
+                txtTranslation.Text = TranslationInvalidMessage;
+            }
         }
 
         private void btnToggleRecording_Click(object sender, EventArgs e)
@@ -165,24 +245,46 @@ namespace AITranscriberWinApp
                 var transcription = await _transcriptionService.TranscribeAsync(audioPath, apiKey, token);
                 txtTranscript.Text = transcription.Text;
 
-                UpdateStatus("Translating to Persian...");
-                txtTranslation.Text = "Translating...";
-                try
-                {
-                    var translation = await _translationService.TranslateToPersianAsync(transcription.Text, token);
-                    transcription.Translation = translation;
-                }
-                catch (Exception translateError)
+                string completionStatus;
+
+                if (_translationService == null)
                 {
                     transcription.Translation = string.Empty;
-                    MessageBox.Show($"Translation failed: {translateError.Message}", "Translation Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    var disabledMessage = _translationEndpointStatus == TranslationEndpointConfiguration.Invalid
+                        ? TranslationInvalidMessage
+                        : TranslationDisabledMessage;
+                    txtTranslation.Text = disabledMessage;
+                    completionStatus = _translationEndpointStatus == TranslationEndpointConfiguration.Invalid
+                        ? "Completed (translation disabled: invalid translation URL)."
+                        : "Completed (translation disabled).";
                 }
-                txtTranslation.Text = transcription.Translation;
+                else
+                {
+                    UpdateStatus("Translating to Persian...");
+                    txtTranslation.Text = "Translating...";
+
+                    try
+                    {
+                        var translation = await _translationService.TranslateToPersianAsync(transcription.Text, token);
+                        transcription.Translation = translation;
+                        txtTranslation.Text = string.IsNullOrWhiteSpace(translation)
+                            ? "[No translation returned]"
+                            : translation;
+                        completionStatus = string.IsNullOrWhiteSpace(translation)
+                            ? "Completed (translation unavailable)."
+                            : "Completed.";
+                    }
+                    catch (Exception translateError)
+                    {
+                        transcription.Translation = string.Empty;
+                        txtTranslation.Text = "Translation failed.";
+                        completionStatus = "Completed (translation unavailable).";
+                        MessageBox.Show($"Translation failed: {translateError.Message}", "Translation Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }
 
                 SaveTranscript(audioPath, transcription);
-                UpdateStatus(string.IsNullOrEmpty(transcription.Translation)
-                    ? "Completed (translation unavailable)."
-                    : "Completed.");
+                UpdateStatus(completionStatus);
             }
             catch (OperationCanceledException)
             {
@@ -247,7 +349,10 @@ namespace AITranscriberWinApp
                 builder.AppendLine(transcription.Text);
                 builder.AppendLine();
                 builder.AppendLine("Persian Translation:");
-                builder.AppendLine(transcription.Translation);
+                var translationText = string.IsNullOrWhiteSpace(transcription.Translation)
+                    ? "[No translation available]"
+                    : transcription.Translation;
+                builder.AppendLine(translationText);
 
                 File.WriteAllText(textOutputPath, builder.ToString(), Encoding.UTF8);
 
@@ -260,7 +365,7 @@ namespace AITranscriberWinApp
                 markdownBuilder.AppendLine();
                 markdownBuilder.AppendLine("## Persian Translation");
                 markdownBuilder.AppendLine();
-                markdownBuilder.AppendLine(transcription.Translation);
+                markdownBuilder.AppendLine(translationText);
 
                 File.WriteAllText(markdownOutputPath, markdownBuilder.ToString(), Encoding.UTF8);
             }
@@ -309,6 +414,53 @@ namespace AITranscriberWinApp
         private string GetApiKey()
         {
             return txtApiKey.Text.Trim();
+        }
+
+        private TranslationEndpointConfiguration ApplyTranslationEndpoint(string endpoint, bool showFeedback)
+        {
+            var trimmed = (endpoint ?? string.Empty).Trim();
+
+            TranslationEndpointConfiguration result;
+
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                _translationService = null;
+
+                if (showFeedback)
+                {
+                    MessageBox.Show(
+                        "Translation has been disabled. Provide a translation service URL to enable automatic translation.",
+                        "Translation Disabled",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+
+                result = TranslationEndpointConfiguration.Disabled;
+            }
+            else if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
+                     (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                _translationService = null;
+
+                if (showFeedback)
+                {
+                    MessageBox.Show(
+                        "The translation service URL must start with http:// or https:// and be a valid absolute URL.",
+                        "Invalid Translation URL",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+
+                result = TranslationEndpointConfiguration.Invalid;
+            }
+            else
+            {
+                _translationService = new TranslationService(uri);
+                result = TranslationEndpointConfiguration.Configured;
+            }
+
+            _translationEndpointStatus = result;
+            return result;
         }
 
         private void CleanupRecordingResources()
