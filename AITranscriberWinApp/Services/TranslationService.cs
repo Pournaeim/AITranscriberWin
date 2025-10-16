@@ -138,5 +138,40 @@ namespace AITranscriberWinApp.Services
 
             return builder.ToString();
         }
+
+        private static string TryExtractErrorMessage(string responseBody)
+        {
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var json = JObject.Parse(responseBody);
+                return json.Value<string>("error")
+                    ?? json.SelectToken("error.message")?.ToString()
+                    ?? json.SelectToken("message")?.ToString()
+                    ?? string.Empty;
+            }
+            catch (JsonReaderException)
+            {
+                return responseBody.Length > 500 ? responseBody.Substring(0, 500) : responseBody;
+            }
+        }
+
+        private static string BuildHttpRequestErrorMessage(HttpRequestException exception)
+        {
+            var builder = new StringBuilder();
+            builder.Append("Translation request failed: ");
+            builder.Append(exception.Message);
+
+            if (exception.InnerException != null && !string.Equals(exception.InnerException.Message, exception.Message, StringComparison.Ordinal))
+            {
+                builder.Append(" (" + exception.InnerException.Message + ")");
+            }
+
+            return builder.ToString();
+        }
     }
 }
