@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace AITranscriberWinApp.Services
@@ -44,14 +45,80 @@ namespace AITranscriberWinApp.Services
             {
                 request.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
 
-                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))
+                try
                 {
-                    response.EnsureSuccessStatusCode();
-                    var jsonResponse = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    var json = JObject.Parse(jsonResponse);
-                    return json.Value<string>("translatedText") ?? string.Empty;
+                    using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))
+                    {
+                        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            var detail = TryExtractErrorMessage(responseBody);
+                            var statusCode = (int)response.StatusCode;
+                            var reason = response.ReasonPhrase ?? string.Empty;
+                            var message = string.IsNullOrWhiteSpace(detail)
+                                ? $"Translation service returned {statusCode} {reason}."
+                                : $"Translation service returned {statusCode} {reason}: {detail}";
+
+                            throw new InvalidOperationException(message);
+                        }
+
+                        try
+                        {
+                            var json = JObject.Parse(responseBody);
+                            return json.Value<string>("translatedText") ?? string.Empty;
+                        }
+                        catch (JsonReaderException ex)
+                        {
+                            var preview = responseBody.Length > 500 ? responseBody.Substring(0, 500) : responseBody;
+                            throw new InvalidOperationException($"Translation service returned malformed JSON: {preview}", ex);
+                        }
+                    }
+                }
+                catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TimeoutException("Translation request timed out.", ex);
+                }
+                catch (HttpRequestException ex)
+                {
+                    throw new InvalidOperationException(BuildHttpRequestErrorMessage(ex), ex);
                 }
             }
+        }
+
+        private static string TryExtractErrorMessage(string responseBody)
+        {
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var json = JObject.Parse(responseBody);
+                return json.Value<string>("error")
+                    ?? json.SelectToken("error.message")?.ToString()
+                    ?? json.SelectToken("message")?.ToString()
+                    ?? string.Empty;
+            }
+            catch (JsonReaderException)
+            {
+                return responseBody.Length > 500 ? responseBody.Substring(0, 500) : responseBody;
+            }
+        }
+
+        private static string BuildHttpRequestErrorMessage(HttpRequestException exception)
+        {
+            var builder = new StringBuilder();
+            builder.Append("Translation request failed: ");
+            builder.Append(exception.Message);
+
+            if (exception.InnerException != null && !string.Equals(exception.InnerException.Message, exception.Message, StringComparison.Ordinal))
+            {
+                builder.Append(" (" + exception.InnerException.Message + ")");
+            }
+
+            return builder.ToString();
         }
     }
 }

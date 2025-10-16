@@ -163,8 +163,10 @@ namespace AITranscriberWinApp
 
                 UpdateStatus("Uploading to Whisper...");
                 var transcription = await _transcriptionService.TranscribeAsync(audioPath, apiKey, token);
+                txtTranscript.Text = transcription.Text;
 
                 UpdateStatus("Translating to Persian...");
+                txtTranslation.Text = "Translating...";
                 try
                 {
                     var translation = await _translationService.TranslateToPersianAsync(transcription.Text, token);
@@ -175,8 +177,6 @@ namespace AITranscriberWinApp
                     transcription.Translation = string.Empty;
                     MessageBox.Show($"Translation failed: {translateError.Message}", "Translation Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-
-                txtTranscript.Text = transcription.Text;
                 txtTranslation.Text = transcription.Translation;
 
                 SaveTranscript(audioPath, transcription);
