@@ -44,9 +44,10 @@ namespace AITranscriberWinApp
             // lblApiKey
             // 
             this.lblApiKey.AutoSize = true;
-            this.lblApiKey.Location = new System.Drawing.Point(13, 15);
+            this.lblApiKey.Location = new System.Drawing.Point(10, 12);
+            this.lblApiKey.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblApiKey.Name = "lblApiKey";
-            this.lblApiKey.Size = new System.Drawing.Size(131, 17);
+            this.lblApiKey.Size = new System.Drawing.Size(87, 13);
             this.lblApiKey.TabIndex = 0;
             this.lblApiKey.Text = "OpenAI API Key:";
             // 
@@ -54,18 +55,20 @@ namespace AITranscriberWinApp
             // 
             this.txtApiKey.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.txtApiKey.Location = new System.Drawing.Point(150, 12);
+            this.txtApiKey.Location = new System.Drawing.Point(112, 10);
+            this.txtApiKey.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.txtApiKey.Name = "txtApiKey";
-            this.txtApiKey.Size = new System.Drawing.Size(399, 22);
+            this.txtApiKey.Size = new System.Drawing.Size(300, 20);
             this.txtApiKey.TabIndex = 1;
             this.txtApiKey.UseSystemPasswordChar = true;
             // 
             // btnSaveKey
             // 
             this.btnSaveKey.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnSaveKey.Location = new System.Drawing.Point(555, 10);
+            this.btnSaveKey.Location = new System.Drawing.Point(416, 8);
+            this.btnSaveKey.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.btnSaveKey.Name = "btnSaveKey";
-            this.btnSaveKey.Size = new System.Drawing.Size(123, 27);
+            this.btnSaveKey.Size = new System.Drawing.Size(92, 22);
             this.btnSaveKey.TabIndex = 2;
             this.btnSaveKey.Text = "Save Key";
             this.btnSaveKey.UseVisualStyleBackColor = true;
@@ -74,94 +77,100 @@ namespace AITranscriberWinApp
             // btnToggleRecording
             // 
             this.btnToggleRecording.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnToggleRecording.Location = new System.Drawing.Point(555, 43);
+            this.btnToggleRecording.Location = new System.Drawing.Point(416, 35);
+            this.btnToggleRecording.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.btnToggleRecording.Name = "btnToggleRecording";
-            this.btnToggleRecording.Size = new System.Drawing.Size(123, 32);
+            this.btnToggleRecording.Size = new System.Drawing.Size(92, 26);
             this.btnToggleRecording.TabIndex = 3;
             this.btnToggleRecording.Text = "Start Recording";
             this.btnToggleRecording.UseVisualStyleBackColor = true;
             this.btnToggleRecording.Click += new System.EventHandler(this.btnToggleRecording_Click);
-            //
+            // 
             // btnSelectAudio
-            //
+            // 
             this.btnSelectAudio.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnSelectAudio.Location = new System.Drawing.Point(426, 43);
+            this.btnSelectAudio.Location = new System.Drawing.Point(320, 35);
+            this.btnSelectAudio.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.btnSelectAudio.Name = "btnSelectAudio";
-            this.btnSelectAudio.Size = new System.Drawing.Size(123, 32);
+            this.btnSelectAudio.Size = new System.Drawing.Size(92, 26);
             this.btnSelectAudio.TabIndex = 4;
             this.btnSelectAudio.Text = "Transcribe File...";
             this.btnSelectAudio.UseVisualStyleBackColor = true;
             this.btnSelectAudio.Click += new System.EventHandler(this.btnSelectAudio_Click);
-            //
+            // 
             // lblStatus
-            //
-            this.lblStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            // 
+            this.lblStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.lblStatus.Location = new System.Drawing.Point(13, 48);
+            this.lblStatus.Location = new System.Drawing.Point(10, 39);
+            this.lblStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblStatus.Name = "lblStatus";
-            this.lblStatus.Size = new System.Drawing.Size(407, 23);
+            this.lblStatus.Size = new System.Drawing.Size(305, 19);
             this.lblStatus.TabIndex = 5;
             this.lblStatus.Text = "Status: Idle";
-            //
+            // 
             // txtTranscript
-            //
-            this.txtTranscript.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
-            | System.Windows.Forms.AnchorStyles.Left)
+            // 
+            this.txtTranscript.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.txtTranscript.Location = new System.Drawing.Point(16, 110);
+            this.txtTranscript.Location = new System.Drawing.Point(12, 89);
+            this.txtTranscript.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.txtTranscript.Multiline = true;
             this.txtTranscript.Name = "txtTranscript";
-            this.txtTranscript.ReadOnly = true;
             this.txtTranscript.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.txtTranscript.Size = new System.Drawing.Size(326, 328);
+            this.txtTranscript.Size = new System.Drawing.Size(246, 267);
             this.txtTranscript.TabIndex = 6;
-            //
+            // 
             // txtTranslation
-            //
-            this.txtTranslation.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
-            | System.Windows.Forms.AnchorStyles.Right))));
-            this.txtTranslation.Location = new System.Drawing.Point(348, 110);
+            // 
+            this.txtTranslation.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.txtTranslation.Location = new System.Drawing.Point(261, 89);
+            this.txtTranslation.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.txtTranslation.Multiline = true;
             this.txtTranslation.Name = "txtTranslation";
-            this.txtTranslation.ReadOnly = true;
             this.txtTranslation.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.txtTranslation.Size = new System.Drawing.Size(330, 328);
+            this.txtTranslation.Size = new System.Drawing.Size(248, 267);
             this.txtTranslation.TabIndex = 7;
-            //
+            // 
             // lblTranscript
-            //
+            // 
             this.lblTranscript.AutoSize = true;
-            this.lblTranscript.Location = new System.Drawing.Point(13, 90);
+            this.lblTranscript.Location = new System.Drawing.Point(10, 73);
+            this.lblTranscript.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblTranscript.Name = "lblTranscript";
-            this.lblTranscript.Size = new System.Drawing.Size(144, 17);
+            this.lblTranscript.Size = new System.Drawing.Size(94, 13);
             this.lblTranscript.TabIndex = 8;
             this.lblTranscript.Text = "English Transcript:";
-            //
+            // 
             // lblTranslation
-            //
+            // 
             this.lblTranslation.AutoSize = true;
-            this.lblTranslation.Location = new System.Drawing.Point(345, 90);
+            this.lblTranslation.Location = new System.Drawing.Point(259, 73);
+            this.lblTranslation.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblTranslation.Name = "lblTranslation";
-            this.lblTranslation.Size = new System.Drawing.Size(132, 17);
+            this.lblTranslation.Size = new System.Drawing.Size(100, 13);
             this.lblTranslation.TabIndex = 9;
             this.lblTranslation.Text = "Persian Translation:";
-            //
+            // 
             // btnOpenOutputFolder
-            //
+            // 
             this.btnOpenOutputFolder.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnOpenOutputFolder.Location = new System.Drawing.Point(555, 444);
+            this.btnOpenOutputFolder.Location = new System.Drawing.Point(416, 361);
+            this.btnOpenOutputFolder.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.btnOpenOutputFolder.Name = "btnOpenOutputFolder";
-            this.btnOpenOutputFolder.Size = new System.Drawing.Size(123, 29);
+            this.btnOpenOutputFolder.Size = new System.Drawing.Size(92, 24);
             this.btnOpenOutputFolder.TabIndex = 10;
             this.btnOpenOutputFolder.Text = "Open Folder";
             this.btnOpenOutputFolder.UseVisualStyleBackColor = true;
             this.btnOpenOutputFolder.Click += new System.EventHandler(this.btnOpenOutputFolder_Click);
-            //
+            // 
             // MainForm
-            //
-            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(690, 485);
+            this.ClientSize = new System.Drawing.Size(519, 401);
             this.Controls.Add(this.btnSelectAudio);
             this.Controls.Add(this.btnOpenOutputFolder);
             this.Controls.Add(this.lblTranslation);
@@ -173,7 +182,8 @@ namespace AITranscriberWinApp
             this.Controls.Add(this.btnSaveKey);
             this.Controls.Add(this.txtApiKey);
             this.Controls.Add(this.lblApiKey);
-            this.MinimumSize = new System.Drawing.Size(708, 532);
+            this.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
+            this.MinimumSize = new System.Drawing.Size(535, 440);
             this.Name = "MainForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "AI Transcriber for Windows";
