@@ -37,6 +37,46 @@ namespace AITranscriberWinApp
             }
         }
 
+        internal static bool TryEnsureUserConfigurationFile(
+            out string? configurationFilePath,
+            out string? errorMessage)
+        {
+            configurationFilePath = null;
+            errorMessage = null;
+
+            var resolvedPath = TryGetUserConfigurationFilePath();
+            if (string.IsNullOrWhiteSpace(resolvedPath))
+            {
+                errorMessage = "Unable to determine the configuration file path.";
+                return false;
+            }
+
+            configurationFilePath = resolvedPath;
+
+            try
+            {
+                var directory = Path.GetDirectoryName(resolvedPath);
+                if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                if (!File.Exists(resolvedPath))
+                {
+                    using (File.Create(resolvedPath))
+                    {
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ensureException)
+            {
+                errorMessage = ensureException.Message;
+                return false;
+            }
+        }
+
         internal static void ShowConfigurationErrorDialog(
             ConfigurationErrorsException configurationException,
             string? contextMessage = null)

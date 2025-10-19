@@ -92,6 +92,46 @@ namespace AITranscriberWinApp
                 return;
             }
 
+            if (!Program.TryEnsureUserConfigurationFile(out var configurationFilePath, out var preparationError))
+            {
+                var errorBuilder = new StringBuilder();
+                errorBuilder.AppendLine("AITranscriberWin could not prepare its configuration file for saving settings.");
+
+                if (!string.IsNullOrWhiteSpace(configurationFilePath))
+                {
+                    errorBuilder.AppendLine();
+                    errorBuilder.AppendLine("Configuration file:");
+                    errorBuilder.AppendLine(configurationFilePath);
+                }
+
+                if (!string.IsNullOrWhiteSpace(preparationError))
+                {
+                    errorBuilder.AppendLine();
+                    errorBuilder.AppendLine($"Details: {preparationError}");
+                }
+
+                MessageBox.Show(
+                    errorBuilder.ToString(),
+                    "Configuration Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+
+                try
+                {
+                    Settings.Default.Reload();
+                    txtApiKey.Text = Settings.Default.OpenAIApiKey;
+                    var reloadedEndpoint = Settings.Default.TranslationEndpoint;
+                    txtTranslationEndpoint.Text = reloadedEndpoint;
+                    ApplyTranslationEndpoint(reloadedEndpoint, showFeedback: false);
+                }
+                catch
+                {
+                    // If reloading still fails we keep the current in-memory values so the user can adjust them.
+                }
+
+                return;
+            }
+
             Settings.Default.OpenAIApiKey = apiKey;
             Settings.Default.TranslationEndpoint = endpointText;
 
