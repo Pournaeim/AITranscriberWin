@@ -434,11 +434,13 @@ namespace AITranscriberWinApp
                     completionStatus = _translationEndpointStatus == TranslationEndpointConfiguration.Invalid
                         ? "Completed (translation disabled: invalid translation URL)."
                         : "Completed (translation disabled).";
+                    _translationWarningShown = false;
                 }
                 else
                 {
                     UpdateStatus("Translating to Persian...");
                     txtTranslation.Text = "Translating...";
+                    var translationFailed = false;
 
                     try
                     {
@@ -450,13 +452,24 @@ namespace AITranscriberWinApp
                         completionStatus = string.IsNullOrWhiteSpace(translation)
                             ? "Completed (translation unavailable)."
                             : "Completed.";
+                        _translationWarningShown = false;
                     }
                     catch (Exception translateError)
                     {
-                        transcription.Translation = string.Empty;
-                        txtTranslation.Text = "Translation failed.";
+                        var translationWarning = TranslationErrorFormatter.BuildUserFacingMessage(translateError, isRealtime: false);
+                        transcription.Translation = translationWarning;
+                        txtTranslation.Text = translationWarning;
                         completionStatus = "Completed (translation unavailable).";
-                        MessageBox.Show($"Translation failed: {translateError.Message}", "Translation Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        _translationWarningShown = true;
+                        translationFailed = true;
+                    }
+
+                    if (hasRealtimeResult && (translationFailed || string.IsNullOrWhiteSpace(transcription.Translation)) && !string.IsNullOrWhiteSpace(realtimeResult.Translation))
+                    {
+                        transcription.Translation = realtimeResult.Translation;
+                        txtTranslation.Text = realtimeResult.Translation;
+                        completionStatus = "Completed.";
+                        _translationWarningShown = false;
                     }
 
                     if (hasRealtimeResult && string.IsNullOrWhiteSpace(transcription.Translation) && !string.IsNullOrWhiteSpace(realtimeResult.Translation))

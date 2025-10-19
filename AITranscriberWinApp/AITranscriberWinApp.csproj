@@ -92,6 +92,7 @@
     <Compile Include="Services\OpenAiTranscriptionService.cs" />
     <Compile Include="Services\RealtimeTranscriptionManager.cs" />
     <Compile Include="Services\RealtimeTranscriptionUpdatedEventArgs.cs" />
+    <Compile Include="Services\TranslationErrorFormatter.cs" />
     <Compile Include="Services\TranslationService.cs" />
     <Compile Include="Services\TranscriptionResult.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

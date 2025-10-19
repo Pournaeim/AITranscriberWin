@@ -216,7 +216,7 @@ namespace AITranscriberWinApp.Services
                         }
                         catch (Exception translationError)
                         {
-                            translationErrorMessage = BuildTranslationErrorMessage(translationError);
+                            translationErrorMessage = TranslationErrorFormatter.BuildUserFacingMessage(translationError, isRealtime: true);
                         }
                     }
 
@@ -292,31 +292,6 @@ namespace AITranscriberWinApp.Services
         private void OnTranscriptionError(Exception exception)
         {
             TranscriptionFailed?.Invoke(this, exception);
-        }
-
-        private static string BuildTranslationErrorMessage(Exception exception)
-        {
-            if (exception == null)
-            {
-                return string.Empty;
-            }
-
-            var message = exception.Message ?? string.Empty;
-            var innerMessage = exception.InnerException?.Message;
-
-            if (!string.IsNullOrWhiteSpace(innerMessage) && !string.Equals(innerMessage, message, StringComparison.Ordinal))
-            {
-                message = string.IsNullOrWhiteSpace(message)
-                    ? innerMessage
-                    : message + " (" + innerMessage + ")";
-            }
-
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return "Real-time translation unavailable due to an unexpected error.";
-            }
-
-            return "Real-time translation unavailable. " + message.Trim();
         }
 
         private void ThrowIfDisposed()
