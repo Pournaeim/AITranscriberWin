@@ -37,10 +37,37 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentException("Audio path is required.", nameof(audioPath));
             }
 
+            using (var fileStream = new FileStream(audioPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
+            {
+                return await TranscribeAsync(fileStream, Path.GetFileName(audioPath), apiKey, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, string apiKey, CancellationToken cancellationToken)
+        {
+            if (audioStream == null)
+            {
+                throw new ArgumentNullException(nameof(audioStream));
+            }
+
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                throw new ArgumentException("File name is required.", nameof(fileName));
+            }
+
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
             }
+
+            if (!audioStream.CanSeek)
+            {
+                var copy = new MemoryStream();
+                await audioStream.CopyToAsync(copy, 81920, cancellationToken).ConfigureAwait(false);
+                audioStream = copy;
+            }
+
+            audioStream.Position = 0;
 
             using (var request = new HttpRequestMessage(HttpMethod.Post, TranscriptionEndpoint))
             {
@@ -48,12 +75,11 @@ namespace AITranscriberWinApp.Services
 
                 using (var form = new MultipartFormDataContent())
                 {
-                    var fileStream = new FileStream(audioPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
-                    var fileContent = new StreamContent(fileStream);
-                    var mimeType = GetMimeType(audioPath);
+                    var fileContent = new StreamContent(audioStream);
+                    var mimeType = GetMimeType(fileName);
                     fileContent.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
 
-                    form.Add(fileContent, "file", Path.GetFileName(audioPath));
+                    form.Add(fileContent, "file", Path.GetFileName(fileName));
                     form.Add(new StringContent("whisper-1"), "model");
                     form.Add(new StringContent("json"), "response_format");
 
