@@ -107,52 +107,52 @@ namespace AITranscriberWinApp
             // 
             // txtTranscript
             // 
-            this.txtTranscript.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
+            this.txtTranscript.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)));
             this.txtTranscript.Location = new System.Drawing.Point(12, 85);
-            this.txtTranscript.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
+            this.txtTranscript.Margin = new System.Windows.Forms.Padding(2);
             this.txtTranscript.Multiline = true;
             this.txtTranscript.Name = "txtTranscript";
             this.txtTranscript.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.txtTranscript.Size = new System.Drawing.Size(326, 328);
+            this.txtTranscript.Size = new System.Drawing.Size(320, 340);
             this.txtTranscript.TabIndex = 6;
             //
             // txtTranslation
-            // 
-            this.txtTranslation.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            //
+            this.txtTranslation.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.txtTranslation.Location = new System.Drawing.Point(261, 89);
-            this.txtTranslation.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
+            this.txtTranslation.Location = new System.Drawing.Point(348, 85);
+            this.txtTranslation.Margin = new System.Windows.Forms.Padding(2);
             this.txtTranslation.Multiline = true;
             this.txtTranslation.Name = "txtTranslation";
             this.txtTranslation.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.txtTranslation.Size = new System.Drawing.Size(330, 328);
+            this.txtTranslation.Size = new System.Drawing.Size(330, 340);
             this.txtTranslation.TabIndex = 7;
             //
             // lblTranscript
-            // 
+            //
             this.lblTranscript.AutoSize = true;
-            this.lblTranscript.Location = new System.Drawing.Point(13, 110);
+            this.lblTranscript.Location = new System.Drawing.Point(12, 65);
             this.lblTranscript.Name = "lblTranscript";
             this.lblTranscript.Size = new System.Drawing.Size(144, 17);
             this.lblTranscript.TabIndex = 8;
             this.lblTranscript.Text = "English Transcript:";
-            // 
+            //
             // lblTranslation
-            // 
+            //
             this.lblTranslation.AutoSize = true;
-            this.lblTranslation.Location = new System.Drawing.Point(345, 110);
+            this.lblTranslation.Location = new System.Drawing.Point(348, 65);
             this.lblTranslation.Name = "lblTranslation";
             this.lblTranslation.Size = new System.Drawing.Size(132, 17);
             this.lblTranslation.TabIndex = 9;
             this.lblTranslation.Text = "Persian Translation:";
-            // 
+            //
             // btnOpenOutputFolder
-            // 
+            //
             this.btnOpenOutputFolder.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnOpenOutputFolder.Location = new System.Drawing.Point(416, 361);
-            this.btnOpenOutputFolder.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
+            this.btnOpenOutputFolder.Location = new System.Drawing.Point(555, 437);
+            this.btnOpenOutputFolder.Margin = new System.Windows.Forms.Padding(2);
             this.btnOpenOutputFolder.Name = "btnOpenOutputFolder";
             this.btnOpenOutputFolder.Size = new System.Drawing.Size(123, 29);
             this.btnOpenOutputFolder.TabIndex = 10;
