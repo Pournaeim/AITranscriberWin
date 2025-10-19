@@ -9,12 +9,14 @@ namespace AITranscriberWinApp.Services
             string segmentTranslation,
             string fullTranscript,
             string fullTranslation,
+            string translationError,
             bool isFinalSegment)
         {
             SegmentText = segmentText ?? string.Empty;
             SegmentTranslation = segmentTranslation ?? string.Empty;
             FullTranscript = fullTranscript ?? string.Empty;
             FullTranslation = fullTranslation ?? string.Empty;
+            TranslationError = translationError ?? string.Empty;
             IsFinalSegment = isFinalSegment;
         }
 
@@ -25,6 +27,8 @@ namespace AITranscriberWinApp.Services
         public string FullTranscript { get; }
 
         public string FullTranslation { get; }
+
+        public string TranslationError { get; }
 
         public bool IsFinalSegment { get; }
     }

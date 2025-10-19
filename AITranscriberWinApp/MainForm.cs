@@ -38,6 +38,7 @@ namespace AITranscriberWinApp
         private CancellationTokenSource _processingCts;
         private RealtimeTranscriptionManager _realtimeTranscriptionManager;
         private bool _realtimeErrorShown;
+        private bool _translationWarningShown;
 
         public MainForm()
         {
@@ -183,14 +184,18 @@ namespace AITranscriberWinApp
                 {
                     txtTranslation.Clear();
                 }
+
+                _translationWarningShown = false;
             }
             else if (endpointStatus == TranslationEndpointConfiguration.Disabled)
             {
                 txtTranslation.Text = TranslationDisabledMessage;
+                _translationWarningShown = false;
             }
             else
             {
                 txtTranslation.Text = TranslationInvalidMessage;
+                _translationWarningShown = false;
             }
         }
 
@@ -234,10 +239,12 @@ namespace AITranscriberWinApp
                     _realtimeTranscriptionManager.TranscriptionUpdated += OnRealtimeTranscriptionUpdated;
                     _realtimeTranscriptionManager.TranscriptionFailed += OnRealtimeTranscriptionFailed;
                     txtTranscript.Clear();
+                    _translationWarningShown = false;
 
                     if (_translationService != null)
                     {
                         txtTranslation.Clear();
+                        _translationWarningShown = false;
                     }
                 }
                 else
@@ -665,18 +672,30 @@ namespace AITranscriberWinApp
 
                 if (_translationService != null)
                 {
-                    if (!string.IsNullOrWhiteSpace(e.FullTranslation))
+                    if (!string.IsNullOrWhiteSpace(e.TranslationError))
+                    {
+                        if (!_translationWarningShown || !string.Equals(txtTranslation.Text, e.TranslationError, StringComparison.Ordinal))
+                        {
+                            txtTranslation.Text = e.TranslationError;
+                        }
+
+                        _translationWarningShown = true;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(e.FullTranslation))
                     {
                         txtTranslation.Text = e.FullTranslation;
+                        _translationWarningShown = false;
                     }
                 }
                 else if (_translationEndpointStatus == TranslationEndpointConfiguration.Invalid)
                 {
                     txtTranslation.Text = TranslationInvalidMessage;
+                    _translationWarningShown = false;
                 }
                 else if (_translationEndpointStatus == TranslationEndpointConfiguration.Disabled)
                 {
                     txtTranslation.Text = TranslationDisabledMessage;
+                    _translationWarningShown = false;
                 }
             }));
         }
@@ -696,7 +715,14 @@ namespace AITranscriberWinApp
                 }
 
                 _realtimeErrorShown = true;
-                MessageBox.Show($"Real-time transcription encountered an error: {exception.Message}", "Real-Time Transcription", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                var message = exception?.Message ?? "An unexpected error occurred.";
+
+                if (exception?.InnerException != null && !string.Equals(exception.InnerException.Message, message, StringComparison.Ordinal))
+                {
+                    message += $" ({exception.InnerException.Message})";
+                }
+
+                MessageBox.Show($"Real-time transcription encountered an error: {message}", "Real-Time Transcription", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }));
         }
 
