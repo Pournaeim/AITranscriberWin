@@ -5,5 +5,8 @@
     <Setting Name="OpenAIApiKey" Type="System.String" Scope="User">
       <Value Profile="(Default)"></Value>
     </Setting>
+    <Setting Name="TranslationEndpoint" Type="System.String" Scope="User">
+      <Value Profile="(Default)">https://translate.argosopentech.com/translate</Value>
+    </Setting>
   </Settings>
 </SettingsFile>
