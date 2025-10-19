@@ -229,7 +229,7 @@ namespace AITranscriberWinApp.Services
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
                     request.Content = content;
 
-                    using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
+                    if (!response.IsSuccessStatusCode)
                     {
                         var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
@@ -254,6 +254,8 @@ namespace AITranscriberWinApp.Services
 
                         return id;
                     }
+
+                    return ParseResponse(body);
                 }
             }
         }
