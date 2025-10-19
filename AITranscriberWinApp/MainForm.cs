@@ -471,6 +471,13 @@ namespace AITranscriberWinApp
                         completionStatus = "Completed.";
                         _translationWarningShown = false;
                     }
+
+                    if (hasRealtimeResult && string.IsNullOrWhiteSpace(transcription.Translation) && !string.IsNullOrWhiteSpace(realtimeResult.Translation))
+                    {
+                        transcription.Translation = realtimeResult.Translation;
+                        txtTranslation.Text = realtimeResult.Translation;
+                        completionStatus = "Completed.";
+                    }
                 }
 
                 SaveTranscript(audioPath, transcription);
