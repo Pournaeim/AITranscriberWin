@@ -59,7 +59,7 @@ namespace AITranscriberWinApp.Services
 
                         if (!response.IsSuccessStatusCode)
                         {
-                            var detail = TryExtractErrorMessage(responseBody);
+                            var detail = ExtractErrorDetail(responseBody);
                             var statusCode = (int)response.StatusCode;
                             var reason = response.ReasonPhrase ?? string.Empty;
                             var message = string.IsNullOrWhiteSpace(detail)
@@ -87,12 +87,12 @@ namespace AITranscriberWinApp.Services
                 }
                 catch (HttpRequestException ex)
                 {
-                    throw new InvalidOperationException(BuildHttpRequestErrorMessage(ex), ex);
+                    throw new InvalidOperationException(BuildHttpRequestErrorDetail(ex), ex);
                 }
             }
         }
 
-        private static string TryExtractErrorMessage(string responseBody)
+        private static string ExtractErrorDetail(string responseBody)
         {
             if (string.IsNullOrWhiteSpace(responseBody))
             {
@@ -113,7 +113,7 @@ namespace AITranscriberWinApp.Services
             }
         }
 
-        private static string BuildHttpRequestErrorMessage(HttpRequestException exception)
+        private static string BuildHttpRequestErrorDetail(HttpRequestException exception)
         {
             var builder = new StringBuilder();
             builder.Append("Translation request failed: ");
@@ -134,41 +134,6 @@ namespace AITranscriberWinApp.Services
                         builder.Append(" Verify the Translation Service URL and your network connection.");
                         break;
                 }
-            }
-
-            return builder.ToString();
-        }
-
-        private static string TryExtractErrorMessage(string responseBody)
-        {
-            if (string.IsNullOrWhiteSpace(responseBody))
-            {
-                return string.Empty;
-            }
-
-            try
-            {
-                var json = JObject.Parse(responseBody);
-                return json.Value<string>("error")
-                    ?? json.SelectToken("error.message")?.ToString()
-                    ?? json.SelectToken("message")?.ToString()
-                    ?? string.Empty;
-            }
-            catch (JsonReaderException)
-            {
-                return responseBody.Length > 500 ? responseBody.Substring(0, 500) : responseBody;
-            }
-        }
-
-        private static string BuildHttpRequestErrorMessage(HttpRequestException exception)
-        {
-            var builder = new StringBuilder();
-            builder.Append("Translation request failed: ");
-            builder.Append(exception.Message);
-
-            if (exception.InnerException != null && !string.Equals(exception.InnerException.Message, exception.Message, StringComparison.Ordinal))
-            {
-                builder.Append(" (" + exception.InnerException.Message + ")");
             }
 
             return builder.ToString();
