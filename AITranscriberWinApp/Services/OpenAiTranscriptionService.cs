@@ -91,7 +91,101 @@ namespace AITranscriberWinApp.Services
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
                     request.Content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
 
-                    using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
+            var schema = new JObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = new JObject
+                {
+                    ["transcript"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "English transcription of the supplied audio."
+                    },
+                    ["translation"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Persian translation of the audio content."
+                    }
+                },
+                ["required"] = new JArray("transcript", "translation")
+            };
+
+            var responseFormat = new JObject
+            {
+                ["type"] = "json_schema",
+                ["json_schema"] = new JObject
+                {
+                    ["name"] = "transcription_translation",
+                    ["schema"] = schema
+                }
+            };
+
+            var contentArray = new JArray
+            {
+                new JObject
+                {
+                    ["type"] = "input_text",
+                    ["text"] = InstructionText
+                },
+                new JObject
+                {
+                    ["type"] = "input_file",
+                    ["file_id"] = fileId
+                }
+            };
+
+            var input = new JArray
+            {
+                new JObject
+                {
+                    ["role"] = "user",
+                    ["content"] = contentArray
+                }
+            };
+
+            return new JObject
+            {
+                ["model"] = DefaultModel,
+                ["input"] = input,
+                ["temperature"] = 0,
+                ["text"] = new JObject
+                {
+                    ["format"] = responseFormat
+                }
+            };
+        }
+
+        private async Task<string> UploadAudioFileAsync(Stream audioStream, string fileName, string apiKey, CancellationToken cancellationToken)
+        {
+            if (audioStream == null)
+            {
+                throw new ArgumentNullException(nameof(audioStream));
+            }
+
+            var uploadStream = new MemoryStream();
+            if (audioStream.CanSeek)
+            {
+                audioStream.Position = 0;
+            }
+
+            await audioStream.CopyToAsync(uploadStream, 81920, cancellationToken).ConfigureAwait(false);
+            uploadStream.Position = 0;
+
+            using (var content = new MultipartFormDataContent())
+            {
+                content.Add(new StringContent("assistants"), "purpose");
+
+                var streamContent = new StreamContent(uploadStream);
+                streamContent.Headers.ContentType = new MediaTypeHeaderValue(GetMimeType(fileName));
+                content.Add(streamContent, "file", string.IsNullOrWhiteSpace(fileName) ? "audio.wav" : fileName);
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, FilesEndpoint))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                    request.Content = content;
+
+                    if (!response.IsSuccessStatusCode)
                     {
                         var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
@@ -101,8 +195,8 @@ namespace AITranscriberWinApp.Services
                             var status = (int)response.StatusCode;
                             var reason = response.ReasonPhrase;
                             var message = string.IsNullOrWhiteSpace(errorDetail)
-                                ? $"OpenAI transcription failed ({status} {reason})."
-                                : $"OpenAI transcription failed ({status} {reason}): {errorDetail}";
+                                ? $"OpenAI file upload failed ({status} {reason})."
+                                : $"OpenAI file upload failed ({status} {reason}): {errorDetail}";
 
                             throw new InvalidOperationException(message);
                         }
@@ -255,6 +349,8 @@ namespace AITranscriberWinApp.Services
 
                         return id;
                     }
+
+                    return ParseResponse(body);
                 }
             }
         }
