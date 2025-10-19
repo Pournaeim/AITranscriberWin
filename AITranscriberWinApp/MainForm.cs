@@ -1,4 +1,5 @@
 using System;
+using System.Configuration;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -93,7 +94,32 @@ namespace AITranscriberWinApp
 
             Settings.Default.OpenAIApiKey = apiKey;
             Settings.Default.TranslationEndpoint = endpointText;
-            Settings.Default.Save();
+
+            try
+            {
+                Settings.Default.Save();
+            }
+            catch (ConfigurationErrorsException configurationException)
+            {
+                Program.ShowConfigurationErrorDialog(
+                    configurationException,
+                    "AITranscriberWin could not save its configuration settings.");
+
+                try
+                {
+                    Settings.Default.Reload();
+                    txtApiKey.Text = Settings.Default.OpenAIApiKey;
+                    var reloadedEndpoint = Settings.Default.TranslationEndpoint;
+                    txtTranslationEndpoint.Text = reloadedEndpoint;
+                    ApplyTranslationEndpoint(reloadedEndpoint, showFeedback: false);
+                }
+                catch
+                {
+                    // If reloading still fails we keep the current in-memory values so the user can adjust them.
+                }
+
+                return;
+            }
 
             var message = endpointStatus == TranslationEndpointConfiguration.Configured
                 ? "Settings saved. Translation is enabled."
