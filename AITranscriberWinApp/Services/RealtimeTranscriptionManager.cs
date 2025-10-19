@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using NAudio.Utils;
 using NAudio.Wave;
 
 namespace AITranscriberWinApp.Services
@@ -186,7 +187,7 @@ namespace AITranscriberWinApp.Services
             {
                 using (var chunkStream = new MemoryStream())
                 {
-                    using (var writer = new WaveFileWriter(chunkStream, _waveFormat))
+                    using (var writer = new WaveFileWriter(new IgnoreDisposeStream(chunkStream), _waveFormat))
                     {
                         writer.Write(chunk, 0, chunk.Length);
                     }
