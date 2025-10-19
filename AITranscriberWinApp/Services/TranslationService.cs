@@ -16,7 +16,7 @@ namespace AITranscriberWinApp.Services
         private readonly Uri _endpoint;
 
         public TranslationService()
-            : this(new Uri("https://translate.argosopentech.com/translate"))
+            : this(new Uri("https://libretranslate.com/translate"))
         {
         }
 

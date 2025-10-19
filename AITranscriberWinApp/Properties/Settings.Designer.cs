@@ -41,7 +41,7 @@ namespace AITranscriberWinApp.Properties
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("https://translate.argosopentech.com/translate")]
+        [global::System.Configuration.DefaultSettingValueAttribute("https://libretranslate.com/translate")]
         public string TranslationEndpoint
         {
             get
