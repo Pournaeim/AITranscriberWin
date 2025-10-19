@@ -39,19 +39,5 @@ namespace AITranscriberWinApp.Properties
             }
         }
 
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("https://libretranslate.com/translate")]
-        public string TranslationEndpoint
-        {
-            get
-            {
-                return ((string)(this["TranslationEndpoint"]));
-            }
-            set
-            {
-                this["TranslationEndpoint"] = value;
-            }
-        }
     }
 }

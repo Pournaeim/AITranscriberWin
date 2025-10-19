@@ -15,7 +15,6 @@ namespace AITranscriberWinApp.Services
 
         private readonly OpenAiTranscriptionService _transcriptionService;
         private readonly Func<string> _apiKeyProvider;
-        private readonly Func<TranslationService> _translationServiceProvider;
         private readonly WaveFormat _waveFormat;
         private readonly int _bytesPerChunk;
         private readonly List<byte> _buffer = new List<byte>();
@@ -25,7 +24,6 @@ namespace AITranscriberWinApp.Services
         private readonly StringBuilder _transcriptBuilder = new StringBuilder();
         private readonly StringBuilder _translationBuilder = new StringBuilder();
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
-        private string _lastTranslationError;
 
         private Task _processingChain = Task.CompletedTask;
         private bool _disposed;
@@ -33,13 +31,11 @@ namespace AITranscriberWinApp.Services
         public RealtimeTranscriptionManager(
             OpenAiTranscriptionService transcriptionService,
             Func<string> apiKeyProvider,
-            Func<TranslationService> translationServiceProvider,
             WaveFormat waveFormat,
             TimeSpan? chunkDuration = null)
         {
             _transcriptionService = transcriptionService ?? throw new ArgumentNullException(nameof(transcriptionService));
             _apiKeyProvider = apiKeyProvider ?? throw new ArgumentNullException(nameof(apiKeyProvider));
-            _translationServiceProvider = translationServiceProvider ?? throw new ArgumentNullException(nameof(translationServiceProvider));
             _waveFormat = waveFormat ?? throw new ArgumentNullException(nameof(waveFormat));
 
             var seconds = Math.Max(1, (int)Math.Round((chunkDuration ?? TimeSpan.FromSeconds(DefaultChunkSeconds)).TotalSeconds));
@@ -102,11 +98,6 @@ namespace AITranscriberWinApp.Services
             {
                 var fullTranscript = _transcriptBuilder.ToString().Trim();
                 var fullTranslation = _translationBuilder.ToString().Trim();
-
-                if (string.IsNullOrWhiteSpace(fullTranslation) && !string.IsNullOrWhiteSpace(_lastTranslationError))
-                {
-                    fullTranslation = _lastTranslationError;
-                }
 
                 return new TranscriptionResult
                 {
@@ -204,23 +195,9 @@ namespace AITranscriberWinApp.Services
                     chunkStream.Position = 0;
                     var transcription = await _transcriptionService.TranscribeAsync(chunkStream, "realtime.wav", apiKey, token).ConfigureAwait(false);
                     var segmentText = transcription.Text ?? string.Empty;
-                    var segmentTranslation = string.Empty;
-                    string translationErrorMessage = string.Empty;
+                    var segmentTranslation = transcription.Translation ?? string.Empty;
 
-                    var translationService = _translationServiceProvider();
-                    if (translationService != null && !string.IsNullOrWhiteSpace(segmentText))
-                    {
-                        try
-                        {
-                            segmentTranslation = await translationService.TranslateToPersianAsync(segmentText, token).ConfigureAwait(false);
-                        }
-                        catch (Exception translationError)
-                        {
-                            translationErrorMessage = TranslationErrorFormatter.BuildUserFacingMessage(translationError, isRealtime: true);
-                        }
-                    }
-
-                    AppendAndNotify(segmentText, segmentTranslation, translationErrorMessage, isFinalSegment);
+                    AppendAndNotify(segmentText, segmentTranslation, isFinalSegment);
                 }
             }
             catch (OperationCanceledException)
@@ -233,12 +210,8 @@ namespace AITranscriberWinApp.Services
             }
         }
 
-        private void AppendAndNotify(string segmentText, string segmentTranslation, string translationErrorMessage, bool isFinalSegment)
+        private void AppendAndNotify(string segmentText, string segmentTranslation, bool isFinalSegment)
         {
-            translationErrorMessage = string.IsNullOrWhiteSpace(translationErrorMessage)
-                ? string.Empty
-                : translationErrorMessage.Trim();
-
             string fullTranscript;
             string fullTranslation;
 
@@ -252,20 +225,10 @@ namespace AITranscriberWinApp.Services
                 if (!string.IsNullOrWhiteSpace(segmentTranslation))
                 {
                     AppendWithSpace(_translationBuilder, segmentTranslation);
-                    _lastTranslationError = null;
-                }
-                else if (!string.IsNullOrWhiteSpace(translationErrorMessage))
-                {
-                    _lastTranslationError = translationErrorMessage;
                 }
 
                 fullTranscript = _transcriptBuilder.ToString();
                 fullTranslation = _translationBuilder.ToString();
-
-                if (string.IsNullOrWhiteSpace(fullTranslation) && !string.IsNullOrWhiteSpace(_lastTranslationError))
-                {
-                    fullTranslation = _lastTranslationError;
-                }
             }
 
             TranscriptionUpdated?.Invoke(
@@ -275,7 +238,6 @@ namespace AITranscriberWinApp.Services
                     segmentTranslation,
                     fullTranscript,
                     fullTranslation,
-                    translationErrorMessage,
                     isFinalSegment));
         }
 
