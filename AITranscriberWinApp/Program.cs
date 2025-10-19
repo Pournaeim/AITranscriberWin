@@ -61,10 +61,20 @@ namespace AITranscriberWinApp
                     Directory.CreateDirectory(directory);
                 }
 
-                if (!File.Exists(resolvedPath))
+                if (File.Exists(resolvedPath))
                 {
-                    using (File.Create(resolvedPath))
+                    try
                     {
+                        var info = new FileInfo(resolvedPath);
+                        if (info.Length == 0)
+                        {
+                            File.Delete(resolvedPath);
+                        }
+                    }
+                    catch (Exception fileCheckException)
+                    {
+                        errorMessage = fileCheckException.Message;
+                        return false;
                     }
                 }
 

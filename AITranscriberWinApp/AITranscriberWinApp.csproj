@@ -12,6 +12,7 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
+    <LangVersion>8.0</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -89,6 +90,9 @@
       <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Services\OpenAiTranscriptionService.cs" />
+    <Compile Include="Services\RealtimeTranscriptionManager.cs" />
+    <Compile Include="Services\RealtimeTranscriptionUpdatedEventArgs.cs" />
+    <Compile Include="Services\TranslationErrorFormatter.cs" />
     <Compile Include="Services\TranslationService.cs" />
     <Compile Include="Services\TranscriptionResult.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

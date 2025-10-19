@@ -36,6 +36,9 @@ namespace AITranscriberWinApp
         private string _currentRecordingPath;
         private bool _isRecording;
         private CancellationTokenSource _processingCts;
+        private RealtimeTranscriptionManager _realtimeTranscriptionManager;
+        private bool _realtimeErrorShown;
+        private bool _translationWarningShown;
 
         public MainForm()
         {
@@ -181,14 +184,18 @@ namespace AITranscriberWinApp
                 {
                     txtTranslation.Clear();
                 }
+
+                _translationWarningShown = false;
             }
             else if (endpointStatus == TranslationEndpointConfiguration.Disabled)
             {
                 txtTranslation.Text = TranslationDisabledMessage;
+                _translationWarningShown = false;
             }
             else
             {
                 txtTranslation.Text = TranslationInvalidMessage;
+                _translationWarningShown = false;
             }
         }
 
@@ -216,10 +223,42 @@ namespace AITranscriberWinApp
                 _waveIn.DataAvailable += OnDataAvailable;
                 _waveIn.RecordingStopped += OnRecordingStopped;
                 _waveWriter = new WaveFileWriter(_currentRecordingPath, _waveIn.WaveFormat);
+                _realtimeErrorShown = false;
+
+                _realtimeTranscriptionManager?.Dispose();
+                _realtimeTranscriptionManager = null;
+
+                var apiKey = GetApiKey();
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    _realtimeTranscriptionManager = new RealtimeTranscriptionManager(
+                        _transcriptionService,
+                        GetApiKey,
+                        () => _translationService,
+                        _waveIn.WaveFormat);
+                    _realtimeTranscriptionManager.TranscriptionUpdated += OnRealtimeTranscriptionUpdated;
+                    _realtimeTranscriptionManager.TranscriptionFailed += OnRealtimeTranscriptionFailed;
+                    txtTranscript.Clear();
+                    _translationWarningShown = false;
+
+                    if (_translationService != null)
+                    {
+                        txtTranslation.Clear();
+                        _translationWarningShown = false;
+                    }
+                }
+                else
+                {
+                    txtTranscript.Text = "Real-time transcription requires an OpenAI API key.";
+                }
+
                 _waveIn.StartRecording();
                 _isRecording = true;
                 btnToggleRecording.Text = "Stop Recording";
-                UpdateStatus("Recording...");
+                var statusMessage = _realtimeTranscriptionManager != null
+                    ? "Recording (real-time)..."
+                    : "Recording...";
+                UpdateStatus(statusMessage);
             }
             catch (Exception ex)
             {
@@ -245,6 +284,7 @@ namespace AITranscriberWinApp
         {
             _waveWriter?.Write(e.Buffer, 0, e.BytesRecorded);
             _waveWriter?.Flush();
+            _realtimeTranscriptionManager?.AddAudio(e.Buffer, e.BytesRecorded);
         }
 
         private void OnRecordingStopped(object sender, StoppedEventArgs e)
@@ -262,12 +302,68 @@ namespace AITranscriberWinApp
             {
                 btnToggleRecording.Text = "Start Recording";
                 btnToggleRecording.Enabled = false;
-                await ProcessRecordingAsync(audioPath);
+                TranscriptionResult realtimeResult = null;
+
+                if (_realtimeTranscriptionManager != null)
+                {
+                    realtimeResult = await FinalizeRealtimeProcessingAsync();
+
+                    if (realtimeResult != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(realtimeResult.Text))
+                        {
+                            txtTranscript.Text = realtimeResult.Text;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(realtimeResult.Translation))
+                        {
+                            txtTranslation.Text = realtimeResult.Translation;
+                        }
+                    }
+                }
+
+                await ProcessRecordingAsync(audioPath, realtimeResult);
                 btnToggleRecording.Enabled = true;
             }));
         }
 
-        private async Task ProcessRecordingAsync(string audioPath)
+        private async Task<TranscriptionResult> FinalizeRealtimeProcessingAsync()
+        {
+            var manager = _realtimeTranscriptionManager;
+            if (manager == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                UpdateStatus("Finalizing real-time transcript...");
+                return await manager.CompleteAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                if (!_realtimeErrorShown)
+                {
+                    _realtimeErrorShown = true;
+                    MessageBox.Show($"Real-time transcription failed: {ex.Message}", "Real-Time Transcription", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+
+                return null;
+            }
+            finally
+            {
+                manager.TranscriptionUpdated -= OnRealtimeTranscriptionUpdated;
+                manager.TranscriptionFailed -= OnRealtimeTranscriptionFailed;
+                manager.Dispose();
+                _realtimeTranscriptionManager = null;
+            }
+        }
+
+        private async Task ProcessRecordingAsync(string audioPath, TranscriptionResult realtimeResult = null)
         {
             if (string.IsNullOrWhiteSpace(audioPath) || !File.Exists(audioPath))
             {
@@ -283,8 +379,17 @@ namespace AITranscriberWinApp
                 return;
             }
 
-            txtTranscript.Clear();
-            txtTranslation.Clear();
+            var hasRealtimeResult = realtimeResult != null && (!string.IsNullOrWhiteSpace(realtimeResult.Text) || !string.IsNullOrWhiteSpace(realtimeResult.Translation));
+
+            if (!hasRealtimeResult)
+            {
+                txtTranscript.Clear();
+
+                if (_translationService != null)
+                {
+                    txtTranslation.Clear();
+                }
+            }
 
             _processingCts?.Dispose();
             _processingCts = new CancellationTokenSource();
@@ -311,6 +416,12 @@ namespace AITranscriberWinApp
                 var transcription = await _transcriptionService.TranscribeAsync(audioPath, apiKey, token);
                 txtTranscript.Text = transcription.Text;
 
+                if (hasRealtimeResult && string.IsNullOrWhiteSpace(transcription.Text))
+                {
+                    transcription.Text = realtimeResult.Text;
+                    txtTranscript.Text = transcription.Text;
+                }
+
                 string completionStatus;
 
                 if (_translationService == null)
@@ -323,11 +434,13 @@ namespace AITranscriberWinApp
                     completionStatus = _translationEndpointStatus == TranslationEndpointConfiguration.Invalid
                         ? "Completed (translation disabled: invalid translation URL)."
                         : "Completed (translation disabled).";
+                    _translationWarningShown = false;
                 }
                 else
                 {
                     UpdateStatus("Translating to Persian...");
                     txtTranslation.Text = "Translating...";
+                    var translationFailed = false;
 
                     try
                     {
@@ -339,13 +452,24 @@ namespace AITranscriberWinApp
                         completionStatus = string.IsNullOrWhiteSpace(translation)
                             ? "Completed (translation unavailable)."
                             : "Completed.";
+                        _translationWarningShown = false;
                     }
                     catch (Exception translateError)
                     {
-                        transcription.Translation = string.Empty;
-                        txtTranslation.Text = "Translation failed.";
+                        var translationWarning = TranslationErrorFormatter.BuildUserFacingMessage(translateError, isRealtime: false);
+                        transcription.Translation = translationWarning;
+                        txtTranslation.Text = translationWarning;
                         completionStatus = "Completed (translation unavailable).";
-                        MessageBox.Show($"Translation failed: {translateError.Message}", "Translation Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        _translationWarningShown = true;
+                        translationFailed = true;
+                    }
+
+                    if (hasRealtimeResult && (translationFailed || string.IsNullOrWhiteSpace(transcription.Translation)) && !string.IsNullOrWhiteSpace(realtimeResult.Translation))
+                    {
+                        transcription.Translation = realtimeResult.Translation;
+                        txtTranslation.Text = realtimeResult.Translation;
+                        completionStatus = "Completed.";
+                        _translationWarningShown = false;
                     }
                 }
 
@@ -358,8 +482,17 @@ namespace AITranscriberWinApp
             }
             catch (Exception ex)
             {
-                UpdateStatus("Failed.");
-                MessageBox.Show($"Processing failed: {ex.Message}", "Processing Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (hasRealtimeResult)
+                {
+                    SaveTranscript(audioPath, realtimeResult);
+                    UpdateStatus("Completed (real-time transcript only).");
+                    MessageBox.Show($"Processing failed: {ex.Message}\nThe real-time transcript has been saved.", "Processing Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                else
+                {
+                    UpdateStatus("Failed.");
+                    MessageBox.Show($"Processing failed: {ex.Message}", "Processing Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
             finally
             {
@@ -527,6 +660,76 @@ namespace AITranscriberWinApp
 
             _translationEndpointStatus = result;
             return result;
+        }
+
+        private void OnRealtimeTranscriptionUpdated(object sender, RealtimeTranscriptionUpdatedEventArgs e)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            BeginInvoke(new Action(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(e.FullTranscript))
+                {
+                    txtTranscript.Text = e.FullTranscript;
+                }
+
+                if (_translationService != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(e.TranslationError))
+                    {
+                        if (!_translationWarningShown || !string.Equals(txtTranslation.Text, e.TranslationError, StringComparison.Ordinal))
+                        {
+                            txtTranslation.Text = e.TranslationError;
+                        }
+
+                        _translationWarningShown = true;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(e.FullTranslation))
+                    {
+                        txtTranslation.Text = e.FullTranslation;
+                        _translationWarningShown = false;
+                    }
+                }
+                else if (_translationEndpointStatus == TranslationEndpointConfiguration.Invalid)
+                {
+                    txtTranslation.Text = TranslationInvalidMessage;
+                    _translationWarningShown = false;
+                }
+                else if (_translationEndpointStatus == TranslationEndpointConfiguration.Disabled)
+                {
+                    txtTranslation.Text = TranslationDisabledMessage;
+                    _translationWarningShown = false;
+                }
+            }));
+        }
+
+        private void OnRealtimeTranscriptionFailed(object sender, Exception exception)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            BeginInvoke(new Action(() =>
+            {
+                if (_realtimeErrorShown)
+                {
+                    return;
+                }
+
+                _realtimeErrorShown = true;
+                var message = exception?.Message ?? "An unexpected error occurred.";
+
+                if (exception?.InnerException != null && !string.Equals(exception.InnerException.Message, message, StringComparison.Ordinal))
+                {
+                    message += $" ({exception.InnerException.Message})";
+                }
+
+                MessageBox.Show($"Real-time transcription encountered an error: {message}", "Real-Time Transcription", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }));
         }
 
         private void CleanupRecordingResources()
