@@ -17,6 +17,7 @@ namespace AITranscriberWinApp.Services
         private const string DefaultModel = "gpt-4o-mini-transcribe";
         private const string InstructionText = "Transcribe the provided audio in English and provide a natural Persian translation. Return a JSON object that contains the fields 'transcript' and 'translation'.";
         private static readonly Uri ResponsesEndpoint = new Uri("https://api.openai.com/v1/responses");
+        private static readonly Uri FilesEndpoint = new Uri("https://api.openai.com/v1/files/");
         private readonly HttpClient _httpClient;
         private static readonly IReadOnlyDictionary<string, string> AudioFormats = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -65,21 +66,30 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
             }
 
+            MemoryStream ownedStream = null;
             if (!audioStream.CanSeek)
             {
-                var copy = new MemoryStream();
-                await audioStream.CopyToAsync(copy, 81920, cancellationToken).ConfigureAwait(false);
-                audioStream = copy;
+                ownedStream = new MemoryStream();
+                await audioStream.CopyToAsync(ownedStream, 81920, cancellationToken).ConfigureAwait(false);
+                ownedStream.Position = 0;
+                audioStream = ownedStream;
+            }
+            else
+            {
+                audioStream.Position = 0;
             }
 
-            audioStream.Position = 0;
+            string uploadedFileId = null;
 
-            var payload = await BuildRequestPayloadAsync(audioStream, fileName).ConfigureAwait(false);
-
-            using (var request = new HttpRequestMessage(HttpMethod.Post, ResponsesEndpoint))
+            try
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                request.Content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                uploadedFileId = await UploadAudioFileAsync(audioStream, fileName, apiKey, cancellationToken).ConfigureAwait(false);
+                var payload = BuildRequestPayload(uploadedFileId);
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, ResponsesEndpoint))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                    request.Content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
 
                 using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
                 {
@@ -100,28 +110,30 @@ namespace AITranscriberWinApp.Services
                     return ParseResponse(body);
                 }
             }
+            finally
+            {
+                ownedStream?.Dispose();
+
+                if (!string.IsNullOrWhiteSpace(uploadedFileId))
+                {
+                    try
+                    {
+                        await DeleteFileAsync(uploadedFileId, apiKey, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Swallow cleanup errors to avoid masking the original result.
+                    }
+                }
+            }
         }
 
-        private static async Task<JObject> BuildRequestPayloadAsync(Stream audioStream, string fileName)
+        private static JObject BuildRequestPayload(string fileId)
         {
-            if (!audioStream.CanSeek)
+            if (string.IsNullOrWhiteSpace(fileId))
             {
-                var copy = new MemoryStream();
-                await audioStream.CopyToAsync(copy).ConfigureAwait(false);
-                audioStream = copy;
+                throw new ArgumentException("A valid uploaded file id is required.", nameof(fileId));
             }
-
-            audioStream.Position = 0;
-            byte[] audioBytes;
-
-            using (var memory = new MemoryStream())
-            {
-                await audioStream.CopyToAsync(memory).ConfigureAwait(false);
-                audioBytes = memory.ToArray();
-            }
-
-            var base64 = Convert.ToBase64String(audioBytes);
-            var format = GetAudioFormat(fileName);
 
             var schema = new JObject
             {
@@ -162,12 +174,8 @@ namespace AITranscriberWinApp.Services
                 },
                 new JObject
                 {
-                    ["type"] = "input_audio",
-                    ["audio"] = new JObject
-                    {
-                        ["data"] = base64,
-                        ["format"] = format
-                    }
+                    ["type"] = "input_file",
+                    ["file_id"] = fileId
                 }
             };
 
@@ -190,6 +198,101 @@ namespace AITranscriberWinApp.Services
                     ["format"] = responseFormat
                 }
             };
+        }
+
+        private async Task<string> UploadAudioFileAsync(Stream audioStream, string fileName, string apiKey, CancellationToken cancellationToken)
+        {
+            if (audioStream == null)
+            {
+                throw new ArgumentNullException(nameof(audioStream));
+            }
+
+            var uploadStream = new MemoryStream();
+            if (audioStream.CanSeek)
+            {
+                audioStream.Position = 0;
+            }
+
+            await audioStream.CopyToAsync(uploadStream, 81920, cancellationToken).ConfigureAwait(false);
+            uploadStream.Position = 0;
+
+            using (var content = new MultipartFormDataContent())
+            {
+                content.Add(new StringContent("assistants"), "purpose");
+
+                var streamContent = new StreamContent(uploadStream);
+                streamContent.Headers.ContentType = new MediaTypeHeaderValue(GetMimeType(fileName));
+                content.Add(streamContent, "file", string.IsNullOrWhiteSpace(fileName) ? "audio.wav" : fileName);
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, FilesEndpoint))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                    request.Content = content;
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            var errorDetail = TryExtractErrorMessage(body);
+                            var status = (int)response.StatusCode;
+                            var reason = response.ReasonPhrase;
+                            var message = string.IsNullOrWhiteSpace(errorDetail)
+                                ? $"OpenAI file upload failed ({status} {reason})."
+                                : $"OpenAI file upload failed ({status} {reason}): {errorDetail}";
+
+                            throw new InvalidOperationException(message);
+                        }
+
+                        var json = JObject.Parse(body);
+                        var id = json.Value<string>("id");
+                        if (string.IsNullOrWhiteSpace(id))
+                        {
+                            throw new InvalidOperationException("OpenAI file upload response did not include an id.");
+                        }
+
+                        return id;
+                    }
+
+                    return ParseResponse(body);
+                }
+            }
+        }
+
+        private async Task DeleteFileAsync(string fileId, string apiKey, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(fileId))
+            {
+                return;
+            }
+
+            using (var request = new HttpRequestMessage(HttpMethod.Delete, new Uri(FilesEndpoint, fileId)))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+                {
+                    // Ignore the response body; best-effort cleanup.
+                }
+            }
+        }
+
+        private static string GetMimeType(string fileName)
+        {
+            var format = GetAudioFormat(fileName);
+
+            switch (format)
+            {
+                case "mp3":
+                    return "audio/mpeg";
+                case "m4a":
+                    return "audio/mp4";
+                case "aac":
+                    return "audio/aac";
+                default:
+                    return "audio/wav";
+            }
         }
 
         private static string TryExtractErrorMessage(string responseBody)
