@@ -17,7 +17,6 @@ namespace AITranscriberWinApp.Services
         private const string DefaultModel = "gpt-4o-mini-transcribe";
         private const string InstructionText = "Transcribe the provided audio in English and provide a natural Persian translation. Return a JSON object that contains the fields 'transcript' and 'translation'.";
         private static readonly Uri ResponsesEndpoint = new Uri("https://api.openai.com/v1/responses");
-        private static readonly Uri FilesEndpoint = new Uri("https://api.openai.com/v1/files/");
         private readonly HttpClient _httpClient;
         private static readonly IReadOnlyDictionary<string, string> AudioFormats = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -66,74 +65,47 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
             }
 
-            var uploadContext = await PrepareUploadStreamAsync(audioStream, cancellationToken).ConfigureAwait(false);
-            var uploadStream = uploadContext.Stream;
-            var ownsStream = uploadContext.OwnsStream;
-            string uploadedFileId = null;
+            var audioFormat = GetAudioFormat(fileName);
+            var base64Audio = await EncodeStreamToBase64Async(audioStream, cancellationToken).ConfigureAwait(false);
+            var payload = BuildRequestPayload(base64Audio, audioFormat);
 
-            try
+            using (var request = new HttpRequestMessage(HttpMethod.Post, ResponsesEndpoint))
             {
-                uploadedFileId = await UploadAudioFileAsync(uploadStream, fileName, apiKey, cancellationToken).ConfigureAwait(false);
-                var payload = BuildRequestPayload(uploadedFileId);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                request.Content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
 
-                using (var request = new HttpRequestMessage(HttpMethod.Post, ResponsesEndpoint))
+                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
                 {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                    request.Content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                    var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-                    using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
+                    if (!response.IsSuccessStatusCode)
                     {
-                        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        var errorDetail = TryExtractErrorMessage(body);
+                        var status = (int)response.StatusCode;
+                        var reason = response.ReasonPhrase;
+                        var message = string.IsNullOrWhiteSpace(errorDetail)
+                            ? $"OpenAI transcription failed ({status} {reason})."
+                            : $"OpenAI transcription failed ({status} {reason}): {errorDetail}";
 
-                        if (!response.IsSuccessStatusCode)
-                        {
-                            var errorDetail = TryExtractErrorMessage(body);
-                            var status = (int)response.StatusCode;
-                            var reason = response.ReasonPhrase;
-                            var message = string.IsNullOrWhiteSpace(errorDetail)
-                                ? $"OpenAI transcription failed ({status} {reason})."
-                                : $"OpenAI transcription failed ({status} {reason}): {errorDetail}";
-
-                            throw new InvalidOperationException(message);
-                        }
-
-                        return ParseResponse(body);
+                        throw new InvalidOperationException(message);
                     }
-                }
-            }
-            finally
-            {
-                if (ownsStream)
-                {
-                    uploadStream.Dispose();
-                }
 
-                if (!string.IsNullOrWhiteSpace(uploadedFileId))
-                {
-                    try
-                    {
-                        await DeleteFileAsync(uploadedFileId, apiKey, CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // Swallow cleanup errors to avoid masking the original result.
-                    }
+                    return ParseResponse(body);
                 }
             }
         }
 
-        private static JObject BuildRequestPayload(string fileId)
+        private static JObject BuildRequestPayload(string base64Audio, string audioFormat)
         {
-            if (string.IsNullOrWhiteSpace(fileId))
+            if (string.IsNullOrWhiteSpace(base64Audio))
             {
-                throw new ArgumentException("A valid uploaded file id is required.", nameof(fileId));
+                throw new ArgumentException("A valid audio payload is required.", nameof(base64Audio));
             }
-            finally
+
+            if (string.IsNullOrWhiteSpace(audioFormat))
             {
-                if (ownsStream)
-                {
-                    uploadStream.Dispose();
-                }
+                throw new ArgumentException("A valid audio format is required.", nameof(audioFormat));
+            }
 
             var schema = new JObject
             {
@@ -174,8 +146,12 @@ namespace AITranscriberWinApp.Services
                 },
                 new JObject
                 {
-                    ["type"] = "input_file",
-                    ["file_id"] = fileId
+                    ["type"] = "input_audio",
+                    ["audio"] = new JObject
+                    {
+                        ["format"] = audioFormat,
+                        ["data"] = base64Audio
+                    }
                 }
             };
 
@@ -200,63 +176,7 @@ namespace AITranscriberWinApp.Services
             };
         }
 
-        private async Task<string> UploadAudioFileAsync(Stream audioStream, string fileName, string apiKey, CancellationToken cancellationToken)
-        {
-            if (audioStream == null)
-            {
-                throw new ArgumentNullException(nameof(audioStream));
-            }
-
-            using (var content = new MultipartFormDataContent())
-            {
-                content.Add(new StringContent("assistants"), "purpose");
-
-                if (audioStream.CanSeek)
-                {
-                    audioStream.Position = 0;
-                }
-
-                var streamContent = new StreamContent(new NonDisposingStream(audioStream));
-                streamContent.Headers.ContentType = new MediaTypeHeaderValue(GetMimeType(fileName));
-                content.Add(streamContent, "file", string.IsNullOrWhiteSpace(fileName) ? "audio.wav" : fileName);
-
-                using (var request = new HttpRequestMessage(HttpMethod.Post, FilesEndpoint))
-                {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                    request.Content = content;
-
-                    using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
-                    {
-                        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                        if (!response.IsSuccessStatusCode)
-                        {
-                            var errorDetail = TryExtractErrorMessage(body);
-                            var status = (int)response.StatusCode;
-                            var reason = response.ReasonPhrase;
-                            var message = string.IsNullOrWhiteSpace(errorDetail)
-                                ? $"OpenAI file upload failed ({status} {reason})."
-                                : $"OpenAI file upload failed ({status} {reason}): {errorDetail}";
-
-                            throw new InvalidOperationException(message);
-                        }
-
-                        var json = JObject.Parse(body);
-                        var id = json.Value<string>("id");
-                        if (string.IsNullOrWhiteSpace(id))
-                        {
-                            throw new InvalidOperationException("OpenAI file upload response did not include an id.");
-                        }
-
-                        return id;
-                    }
-
-                    return ParseResponse(body);
-                }
-            }
-        }
-
-        private static async Task<UploadStreamContext> PrepareUploadStreamAsync(Stream audioStream, CancellationToken cancellationToken)
+        private static async Task<string> EncodeStreamToBase64Async(Stream audioStream, CancellationToken cancellationToken)
         {
             if (audioStream == null)
             {
@@ -266,47 +186,17 @@ namespace AITranscriberWinApp.Services
             if (audioStream.CanSeek)
             {
                 audioStream.Position = 0;
-                return new UploadStreamContext(audioStream, false);
-            }
 
-            var buffer = new MemoryStream();
-            await audioStream.CopyToAsync(buffer, 81920, cancellationToken).ConfigureAwait(false);
-            buffer.Position = 0;
-            return new UploadStreamContext(buffer, true);
-        }
-
-        private async Task DeleteFileAsync(string fileId, string apiKey, CancellationToken cancellationToken)
-        {
-            if (string.IsNullOrWhiteSpace(fileId))
-            {
-                return;
-            }
-
-            using (var request = new HttpRequestMessage(HttpMethod.Delete, new Uri(FilesEndpoint, fileId)))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+                if (audioStream is MemoryStream memoryStream)
                 {
-                    // Ignore the response body; best-effort cleanup.
+                    return Convert.ToBase64String(memoryStream.ToArray());
                 }
             }
-        }
 
-        private static string GetMimeType(string fileName)
-        {
-            var format = GetAudioFormat(fileName);
-
-            switch (format)
+            using (var buffer = new MemoryStream())
             {
-                case "mp3":
-                    return "audio/mpeg";
-                case "m4a":
-                    return "audio/mp4";
-                case "aac":
-                    return "audio/aac";
-                default:
-                    return "audio/wav";
+                await audioStream.CopyToAsync(buffer, 81920, cancellationToken).ConfigureAwait(false);
+                return Convert.ToBase64String(buffer.ToArray());
             }
         }
 
@@ -399,110 +289,5 @@ namespace AITranscriberWinApp.Services
             return "wav";
         }
 
-        private sealed class NonDisposingStream : Stream
-        {
-            private readonly Stream _inner;
-
-            public NonDisposingStream(Stream inner)
-            {
-                _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-            }
-
-            public override bool CanRead => _inner.CanRead;
-            public override bool CanSeek => _inner.CanSeek;
-            public override bool CanWrite => _inner.CanWrite;
-            public override bool CanTimeout => _inner.CanTimeout;
-            public override long Length => _inner.Length;
-
-            public override long Position
-            {
-                get => _inner.Position;
-                set => _inner.Position = value;
-            }
-
-            public override int ReadTimeout
-            {
-                get => _inner.ReadTimeout;
-                set => _inner.ReadTimeout = value;
-            }
-
-            public override int WriteTimeout
-            {
-                get => _inner.WriteTimeout;
-                set => _inner.WriteTimeout = value;
-            }
-
-            public override void Flush()
-            {
-                _inner.Flush();
-            }
-
-            public override int Read(byte[] buffer, int offset, int count)
-            {
-                return _inner.Read(buffer, offset, count);
-            }
-
-            public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-            {
-                return _inner.ReadAsync(buffer, offset, count, cancellationToken);
-            }
-
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
-            public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-            {
-                return _inner.ReadAsync(buffer, cancellationToken);
-            }
-#endif
-
-            public override long Seek(long offset, SeekOrigin origin)
-            {
-                return _inner.Seek(offset, origin);
-            }
-
-            public override void SetLength(long value)
-            {
-                _inner.SetLength(value);
-            }
-
-            public override void Write(byte[] buffer, int offset, int count)
-            {
-                _inner.Write(buffer, offset, count);
-            }
-
-            public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-            {
-                return _inner.WriteAsync(buffer, offset, count, cancellationToken);
-            }
-
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
-            public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-            {
-                return _inner.WriteAsync(buffer, cancellationToken);
-            }
-#endif
-
-            public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
-            {
-                return _inner.CopyToAsync(destination, bufferSize, cancellationToken);
-            }
-
-            protected override void Dispose(bool disposing)
-            {
-                // Intentionally do not dispose the inner stream so callers retain ownership.
-            }
-        }
-
-        private sealed class UploadStreamContext
-        {
-            public UploadStreamContext(Stream stream, bool ownsStream)
-            {
-                Stream = stream ?? throw new ArgumentNullException(nameof(stream));
-                OwnsStream = ownsStream;
-            }
-
-            public Stream Stream { get; }
-
-            public bool OwnsStream { get; }
-        }
     }
 }
