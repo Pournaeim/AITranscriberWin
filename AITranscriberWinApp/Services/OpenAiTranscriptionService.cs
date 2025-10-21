@@ -242,6 +242,8 @@ namespace AITranscriberWinApp.Services
 
                         return id;
                     }
+
+                    return ParseResponse(body);
                 }
             }
         }
@@ -252,6 +254,7 @@ namespace AITranscriberWinApp.Services
             {
                 throw new ArgumentNullException(nameof(audioStream));
             }
+        }
 
             if (audioStream.CanSeek)
             {
