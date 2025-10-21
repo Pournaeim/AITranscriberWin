@@ -128,13 +128,6 @@ namespace AITranscriberWinApp.Services
             {
                 throw new ArgumentException("A valid uploaded file id is required.", nameof(fileId));
             }
-            finally
-            {
-                if (ownsStream)
-                {
-                    uploadStream.Dispose();
-                }
-
             var schema = new JObject
             {
                 ["type"] = "object",
@@ -250,8 +243,6 @@ namespace AITranscriberWinApp.Services
 
                         return id;
                     }
-
-                    return ParseResponse(body);
                 }
             }
         }
