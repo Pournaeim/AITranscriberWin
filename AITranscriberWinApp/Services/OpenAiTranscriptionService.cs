@@ -66,7 +66,9 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
             }
 
-            var (uploadStream, ownsStream) = await PrepareUploadStreamAsync(audioStream, cancellationToken).ConfigureAwait(false);
+            var uploadContext = await PrepareUploadStreamAsync(audioStream, cancellationToken).ConfigureAwait(false);
+            var uploadStream = uploadContext.Stream;
+            var ownsStream = uploadContext.OwnsStream;
             string uploadedFileId = null;
 
             try
@@ -126,6 +128,12 @@ namespace AITranscriberWinApp.Services
             {
                 throw new ArgumentException("A valid uploaded file id is required.", nameof(fileId));
             }
+            finally
+            {
+                if (ownsStream)
+                {
+                    uploadStream.Dispose();
+                }
 
             var schema = new JObject
             {
@@ -248,24 +256,23 @@ namespace AITranscriberWinApp.Services
             }
         }
 
-        private static async Task<(Stream Stream, bool OwnsStream)> PrepareUploadStreamAsync(Stream audioStream, CancellationToken cancellationToken)
+        private static async Task<UploadStreamContext> PrepareUploadStreamAsync(Stream audioStream, CancellationToken cancellationToken)
         {
             if (audioStream == null)
             {
                 throw new ArgumentNullException(nameof(audioStream));
             }
-        }
 
             if (audioStream.CanSeek)
             {
                 audioStream.Position = 0;
-                return (audioStream, false);
+                return new UploadStreamContext(audioStream, false);
             }
 
             var buffer = new MemoryStream();
             await audioStream.CopyToAsync(buffer, 81920, cancellationToken).ConfigureAwait(false);
             buffer.Position = 0;
-            return (buffer, true);
+            return new UploadStreamContext(buffer, true);
         }
 
         private async Task DeleteFileAsync(string fileId, string apiKey, CancellationToken cancellationToken)
@@ -483,6 +490,19 @@ namespace AITranscriberWinApp.Services
             {
                 // Intentionally do not dispose the inner stream so callers retain ownership.
             }
+        }
+
+        private sealed class UploadStreamContext
+        {
+            public UploadStreamContext(Stream stream, bool ownsStream)
+            {
+                Stream = stream ?? throw new ArgumentNullException(nameof(stream));
+                OwnsStream = ownsStream;
+            }
+
+            public Stream Stream { get; }
+
+            public bool OwnsStream { get; }
         }
     }
 }
