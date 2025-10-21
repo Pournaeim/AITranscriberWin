@@ -14,18 +14,7 @@ namespace AITranscriberWinApp
 {
     public partial class MainForm : Form
     {
-        private enum TranslationEndpointConfiguration
-        {
-            Disabled,
-            Configured,
-            Invalid
-        }
-
         private readonly OpenAiTranscriptionService _transcriptionService = new OpenAiTranscriptionService();
-        private TranslationService _translationService;
-        private TranslationEndpointConfiguration _translationEndpointStatus = TranslationEndpointConfiguration.Disabled;
-        private const string TranslationDisabledMessage = "Translation disabled. Provide a translation service URL in Settings to enable it.";
-        private const string TranslationInvalidMessage = "Translation disabled until a valid service URL is saved.";
         private const int FileReadyMaxAttempts = 10;
         private static readonly TimeSpan FileReadyRetryDelay = TimeSpan.FromMilliseconds(200);
         private readonly string _recordingsDirectory;
@@ -38,7 +27,6 @@ namespace AITranscriberWinApp
         private CancellationTokenSource _processingCts;
         private RealtimeTranscriptionManager _realtimeTranscriptionManager;
         private bool _realtimeErrorShown;
-        private bool _translationWarningShown;
 
         public MainForm()
         {
@@ -50,50 +38,12 @@ namespace AITranscriberWinApp
             Directory.CreateDirectory(_recordingsDirectory);
             Directory.CreateDirectory(_transcriptsDirectory);
             txtApiKey.Text = Settings.Default.OpenAIApiKey;
-            var savedEndpoint = Settings.Default.TranslationEndpoint;
-            txtTranslationEndpoint.Text = savedEndpoint;
-            var endpointStatus = ApplyTranslationEndpoint(savedEndpoint, showFeedback: false);
-            string statusMessage;
-            string translationHint = string.Empty;
-
-            switch (endpointStatus)
-            {
-                case TranslationEndpointConfiguration.Configured:
-                    statusMessage = "Ready.";
-                    break;
-                case TranslationEndpointConfiguration.Disabled:
-                    statusMessage = "Ready (translation disabled).";
-                    translationHint = TranslationDisabledMessage;
-                    break;
-                case TranslationEndpointConfiguration.Invalid:
-                    statusMessage = "Ready (translation disabled: invalid translation URL).";
-                    translationHint = TranslationInvalidMessage;
-                    break;
-                default:
-                    statusMessage = "Ready.";
-                    break;
-            }
-
-            UpdateStatus(statusMessage);
-
-            if (!string.IsNullOrEmpty(translationHint))
-            {
-                txtTranslation.Text = translationHint;
-            }
+            UpdateStatus("Ready.");
         }
 
         private void btnSaveKey_Click(object sender, EventArgs e)
         {
             var apiKey = txtApiKey.Text.Trim();
-            var endpointText = txtTranslationEndpoint.Text?.Trim() ?? string.Empty;
-            txtTranslationEndpoint.Text = endpointText;
-
-            var endpointStatus = ApplyTranslationEndpoint(endpointText, showFeedback: true);
-            if (endpointStatus == TranslationEndpointConfiguration.Invalid)
-            {
-                txtTranslation.Text = TranslationInvalidMessage;
-                return;
-            }
 
             if (!Program.TryEnsureUserConfigurationFile(out var configurationFilePath, out var preparationError))
             {
@@ -123,9 +73,6 @@ namespace AITranscriberWinApp
                 {
                     Settings.Default.Reload();
                     txtApiKey.Text = Settings.Default.OpenAIApiKey;
-                    var reloadedEndpoint = Settings.Default.TranslationEndpoint;
-                    txtTranslationEndpoint.Text = reloadedEndpoint;
-                    ApplyTranslationEndpoint(reloadedEndpoint, showFeedback: false);
                 }
                 catch
                 {
@@ -136,7 +83,6 @@ namespace AITranscriberWinApp
             }
 
             Settings.Default.OpenAIApiKey = apiKey;
-            Settings.Default.TranslationEndpoint = endpointText;
 
             try
             {
@@ -152,9 +98,6 @@ namespace AITranscriberWinApp
                 {
                     Settings.Default.Reload();
                     txtApiKey.Text = Settings.Default.OpenAIApiKey;
-                    var reloadedEndpoint = Settings.Default.TranslationEndpoint;
-                    txtTranslationEndpoint.Text = reloadedEndpoint;
-                    ApplyTranslationEndpoint(reloadedEndpoint, showFeedback: false);
                 }
                 catch
                 {
@@ -164,38 +107,11 @@ namespace AITranscriberWinApp
                 return;
             }
 
-            var message = endpointStatus == TranslationEndpointConfiguration.Configured
-                ? "Settings saved. Translation is enabled."
-                : "Settings saved. Translation is disabled.";
-
-            MessageBox.Show(message, "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Settings saved.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             if (!_isRecording && _processingCts == null)
             {
-                UpdateStatus(endpointStatus == TranslationEndpointConfiguration.Configured
-                    ? "Ready."
-                    : "Ready (translation disabled)."
-                );
-            }
-
-            if (endpointStatus == TranslationEndpointConfiguration.Configured)
-            {
-                if (txtTranslation.Text == TranslationDisabledMessage || txtTranslation.Text == TranslationInvalidMessage)
-                {
-                    txtTranslation.Clear();
-                }
-
-                _translationWarningShown = false;
-            }
-            else if (endpointStatus == TranslationEndpointConfiguration.Disabled)
-            {
-                txtTranslation.Text = TranslationDisabledMessage;
-                _translationWarningShown = false;
-            }
-            else
-            {
-                txtTranslation.Text = TranslationInvalidMessage;
-                _translationWarningShown = false;
+                UpdateStatus("Ready.");
             }
         }
 
@@ -234,18 +150,11 @@ namespace AITranscriberWinApp
                     _realtimeTranscriptionManager = new RealtimeTranscriptionManager(
                         _transcriptionService,
                         GetApiKey,
-                        () => _translationService,
                         _waveIn.WaveFormat);
                     _realtimeTranscriptionManager.TranscriptionUpdated += OnRealtimeTranscriptionUpdated;
                     _realtimeTranscriptionManager.TranscriptionFailed += OnRealtimeTranscriptionFailed;
                     txtTranscript.Clear();
-                    _translationWarningShown = false;
-
-                    if (_translationService != null)
-                    {
-                        txtTranslation.Clear();
-                        _translationWarningShown = false;
-                    }
+                    txtTranslation.Clear();
                 }
                 else
                 {
@@ -384,11 +293,7 @@ namespace AITranscriberWinApp
             if (!hasRealtimeResult)
             {
                 txtTranscript.Clear();
-
-                if (_translationService != null)
-                {
-                    txtTranslation.Clear();
-                }
+                txtTranslation.Clear();
             }
 
             _processingCts?.Dispose();
@@ -412,9 +317,14 @@ namespace AITranscriberWinApp
                     return;
                 }
 
-                UpdateStatus("Uploading to Whisper...");
+                UpdateStatus("Uploading to OpenAI...");
                 var transcription = await _transcriptionService.TranscribeAsync(audioPath, apiKey, token);
-                txtTranscript.Text = transcription.Text;
+                txtTranscript.Text = string.IsNullOrWhiteSpace(transcription.Text)
+                    ? "[No transcript returned]"
+                    : transcription.Text;
+                txtTranslation.Text = string.IsNullOrWhiteSpace(transcription.Translation)
+                    ? "[No translation returned]"
+                    : transcription.Translation;
 
                 if (hasRealtimeResult && string.IsNullOrWhiteSpace(transcription.Text))
                 {
@@ -422,63 +332,15 @@ namespace AITranscriberWinApp
                     txtTranscript.Text = transcription.Text;
                 }
 
-                string completionStatus;
-
-                if (_translationService == null)
+                if (hasRealtimeResult && string.IsNullOrWhiteSpace(transcription.Translation) && !string.IsNullOrWhiteSpace(realtimeResult.Translation))
                 {
-                    transcription.Translation = string.Empty;
-                    var disabledMessage = _translationEndpointStatus == TranslationEndpointConfiguration.Invalid
-                        ? TranslationInvalidMessage
-                        : TranslationDisabledMessage;
-                    txtTranslation.Text = disabledMessage;
-                    completionStatus = _translationEndpointStatus == TranslationEndpointConfiguration.Invalid
-                        ? "Completed (translation disabled: invalid translation URL)."
-                        : "Completed (translation disabled).";
-                    _translationWarningShown = false;
+                    transcription.Translation = realtimeResult.Translation;
+                    txtTranslation.Text = transcription.Translation;
                 }
-                else
-                {
-                    UpdateStatus("Translating to Persian...");
-                    txtTranslation.Text = "Translating...";
-                    var translationFailed = false;
 
-                    try
-                    {
-                        var translation = await _translationService.TranslateToPersianAsync(transcription.Text, token);
-                        transcription.Translation = translation;
-                        txtTranslation.Text = string.IsNullOrWhiteSpace(translation)
-                            ? "[No translation returned]"
-                            : translation;
-                        completionStatus = string.IsNullOrWhiteSpace(translation)
-                            ? "Completed (translation unavailable)."
-                            : "Completed.";
-                        _translationWarningShown = false;
-                    }
-                    catch (Exception translateError)
-                    {
-                        var translationWarning = TranslationErrorFormatter.BuildUserFacingMessage(translateError, isRealtime: false);
-                        transcription.Translation = translationWarning;
-                        txtTranslation.Text = translationWarning;
-                        completionStatus = "Completed (translation unavailable).";
-                        _translationWarningShown = true;
-                        translationFailed = true;
-                    }
-
-                    if (hasRealtimeResult && (translationFailed || string.IsNullOrWhiteSpace(transcription.Translation)) && !string.IsNullOrWhiteSpace(realtimeResult.Translation))
-                    {
-                        transcription.Translation = realtimeResult.Translation;
-                        txtTranslation.Text = realtimeResult.Translation;
-                        completionStatus = "Completed.";
-                        _translationWarningShown = false;
-                    }
-
-                    if (hasRealtimeResult && string.IsNullOrWhiteSpace(transcription.Translation) && !string.IsNullOrWhiteSpace(realtimeResult.Translation))
-                    {
-                        transcription.Translation = realtimeResult.Translation;
-                        txtTranslation.Text = realtimeResult.Translation;
-                        completionStatus = "Completed.";
-                    }
-                }
+                var completionStatus = string.IsNullOrWhiteSpace(transcription.Translation)
+                    ? "Completed (translation unavailable)."
+                    : "Completed.";
 
                 SaveTranscript(audioPath, transcription);
                 UpdateStatus(completionStatus);
@@ -622,53 +484,6 @@ namespace AITranscriberWinApp
             return txtApiKey.Text.Trim();
         }
 
-        private TranslationEndpointConfiguration ApplyTranslationEndpoint(string endpoint, bool showFeedback)
-        {
-            var trimmed = (endpoint ?? string.Empty).Trim();
-
-            TranslationEndpointConfiguration result;
-
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                _translationService = null;
-
-                if (showFeedback)
-                {
-                    MessageBox.Show(
-                        "Translation has been disabled. Provide a translation service URL to enable automatic translation.",
-                        "Translation Disabled",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-                }
-
-                result = TranslationEndpointConfiguration.Disabled;
-            }
-            else if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
-                     (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            {
-                _translationService = null;
-
-                if (showFeedback)
-                {
-                    MessageBox.Show(
-                        "The translation service URL must start with http:// or https:// and be a valid absolute URL.",
-                        "Invalid Translation URL",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-
-                result = TranslationEndpointConfiguration.Invalid;
-            }
-            else
-            {
-                _translationService = new TranslationService(uri);
-                result = TranslationEndpointConfiguration.Configured;
-            }
-
-            _translationEndpointStatus = result;
-            return result;
-        }
-
         private void OnRealtimeTranscriptionUpdated(object sender, RealtimeTranscriptionUpdatedEventArgs e)
         {
             if (IsDisposed)
@@ -683,32 +498,9 @@ namespace AITranscriberWinApp
                     txtTranscript.Text = e.FullTranscript;
                 }
 
-                if (_translationService != null)
+                if (!string.IsNullOrWhiteSpace(e.FullTranslation))
                 {
-                    if (!string.IsNullOrWhiteSpace(e.TranslationError))
-                    {
-                        if (!_translationWarningShown || !string.Equals(txtTranslation.Text, e.TranslationError, StringComparison.Ordinal))
-                        {
-                            txtTranslation.Text = e.TranslationError;
-                        }
-
-                        _translationWarningShown = true;
-                    }
-                    else if (!string.IsNullOrWhiteSpace(e.FullTranslation))
-                    {
-                        txtTranslation.Text = e.FullTranslation;
-                        _translationWarningShown = false;
-                    }
-                }
-                else if (_translationEndpointStatus == TranslationEndpointConfiguration.Invalid)
-                {
-                    txtTranslation.Text = TranslationInvalidMessage;
-                    _translationWarningShown = false;
-                }
-                else if (_translationEndpointStatus == TranslationEndpointConfiguration.Disabled)
-                {
-                    txtTranslation.Text = TranslationDisabledMessage;
-                    _translationWarningShown = false;
+                    txtTranslation.Text = e.FullTranslation;
                 }
             }));
         }
