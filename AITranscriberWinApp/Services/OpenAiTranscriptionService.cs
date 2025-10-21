@@ -14,16 +14,18 @@ namespace AITranscriberWinApp.Services
 {
     public class OpenAiTranscriptionService
     {
-        private const string DefaultModel = "gpt-4o-mini-transcribe";
-        private const string InstructionText = "Transcribe the provided audio in English and provide a natural Persian translation. Return a JSON object that contains the fields 'transcript' and 'translation'.";
+        private const string TranscriptionModel = "gpt-4o-mini-transcribe";
+        private const string TranslationModel = "gpt-4o-mini";
+        private const string TranslationInstruction = "You are given an English transcription of an audio clip. Provide a natural Persian translation. Return a JSON object with the fields 'transcript' (the original English text) and 'translation' (the Persian translation).";
         private static readonly Uri ResponsesEndpoint = new Uri("https://api.openai.com/v1/responses");
+        private static readonly Uri TranscriptionsEndpoint = new Uri("https://api.openai.com/v1/audio/transcriptions");
         private readonly HttpClient _httpClient;
-        private static readonly IReadOnlyDictionary<string, string> AudioFormats = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        private static readonly IReadOnlyDictionary<string, string> AudioMimeTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            [".wav"] = "wav",
-            [".mp3"] = "mp3",
-            [".m4a"] = "m4a",
-            [".aac"] = "aac"
+            [".wav"] = "audio/wav",
+            [".mp3"] = "audio/mpeg",
+            [".m4a"] = "audio/mp4",
+            [".aac"] = "audio/aac"
         };
 
         public OpenAiTranscriptionService()
@@ -65,9 +67,72 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
             }
 
-            var audioFormat = GetAudioFormat(fileName);
-            var base64Audio = await EncodeStreamToBase64Async(audioStream, cancellationToken).ConfigureAwait(false);
-            var payload = BuildRequestPayload(base64Audio, audioFormat);
+            var transcript = await RequestTranscriptionAsync(audioStream, fileName, apiKey, cancellationToken).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(transcript))
+            {
+                throw new InvalidOperationException("OpenAI transcription result was empty.");
+            }
+
+            return await RequestTranslationAsync(transcript, apiKey, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<string> RequestTranscriptionAsync(Stream audioStream, string fileName, string apiKey, CancellationToken cancellationToken)
+        {
+            var audioBytes = await ReadStreamToByteArrayAsync(audioStream, cancellationToken).ConfigureAwait(false);
+            var mimeType = GetMimeType(fileName);
+
+            using (var content = new MultipartFormDataContent())
+            {
+                var audioContent = new ByteArrayContent(audioBytes);
+                audioContent.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
+                content.Add(audioContent, "file", fileName);
+                content.Add(new StringContent(TranscriptionModel), "model");
+                content.Add(new StringContent("json"), "response_format");
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, TranscriptionsEndpoint))
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                    request.Content = content;
+
+                    using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
+                    {
+                        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            var errorDetail = TryExtractErrorMessage(body);
+                            var status = (int)response.StatusCode;
+                            var reason = response.ReasonPhrase;
+                            var message = string.IsNullOrWhiteSpace(errorDetail)
+                                ? $"OpenAI transcription failed ({status} {reason})."
+                                : $"OpenAI transcription failed ({status} {reason}): {errorDetail}";
+
+                            throw new InvalidOperationException(message);
+                        }
+
+                        var json = JObject.Parse(body);
+                        var text = json.Value<string>("text") ?? string.Empty;
+
+                        if (string.IsNullOrWhiteSpace(text))
+                        {
+                            throw new InvalidOperationException("OpenAI transcription response did not include text output.");
+                        }
+
+                        return text.Trim();
+                    }
+                }
+            }
+        }
+
+        private async Task<TranscriptionResult> RequestTranslationAsync(string transcript, string apiKey, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(transcript))
+            {
+                throw new ArgumentException("A valid transcript is required for translation.", nameof(transcript));
+            }
+
+            var payload = BuildTranslationPayload(transcript);
 
             using (var request = new HttpRequestMessage(HttpMethod.Post, ResponsesEndpoint))
             {
@@ -84,29 +149,19 @@ namespace AITranscriberWinApp.Services
                         var status = (int)response.StatusCode;
                         var reason = response.ReasonPhrase;
                         var message = string.IsNullOrWhiteSpace(errorDetail)
-                            ? $"OpenAI transcription failed ({status} {reason})."
-                            : $"OpenAI transcription failed ({status} {reason}): {errorDetail}";
+                            ? $"OpenAI translation failed ({status} {reason})."
+                            : $"OpenAI translation failed ({status} {reason}): {errorDetail}";
 
                         throw new InvalidOperationException(message);
                     }
 
-                    return ParseResponse(body);
+                    return ParseResponse(body, transcript);
                 }
             }
         }
 
-        private static JObject BuildRequestPayload(string base64Audio, string audioFormat)
+        private static JObject BuildTranslationPayload(string transcript)
         {
-            if (string.IsNullOrWhiteSpace(base64Audio))
-            {
-                throw new ArgumentException("A valid audio payload is required.", nameof(base64Audio));
-            }
-
-            if (string.IsNullOrWhiteSpace(audioFormat))
-            {
-                throw new ArgumentException("A valid audio format is required.", nameof(audioFormat));
-            }
-
             var schema = new JObject
             {
                 ["type"] = "object",
@@ -116,25 +171,15 @@ namespace AITranscriberWinApp.Services
                     ["transcript"] = new JObject
                     {
                         ["type"] = "string",
-                        ["description"] = "English transcription of the supplied audio."
+                        ["description"] = "English transcription of the supplied audio.",
                     },
                     ["translation"] = new JObject
                     {
                         ["type"] = "string",
-                        ["description"] = "Persian translation of the audio content."
+                        ["description"] = "Persian translation of the audio content.",
                     }
                 },
                 ["required"] = new JArray("transcript", "translation")
-            };
-
-            var responseFormat = new JObject
-            {
-                ["type"] = "json_schema",
-                ["json_schema"] = new JObject
-                {
-                    ["name"] = "transcription_translation",
-                    ["schema"] = schema
-                }
             };
 
             var contentArray = new JArray
@@ -142,16 +187,12 @@ namespace AITranscriberWinApp.Services
                 new JObject
                 {
                     ["type"] = "input_text",
-                    ["text"] = InstructionText
+                    ["text"] = TranslationInstruction
                 },
                 new JObject
                 {
-                    ["type"] = "input_audio",
-                    ["audio"] = new JObject
-                    {
-                        ["format"] = audioFormat,
-                        ["data"] = base64Audio
-                    }
+                    ["type"] = "input_text",
+                    ["text"] = transcript
                 }
             };
 
@@ -164,19 +205,29 @@ namespace AITranscriberWinApp.Services
                 }
             };
 
+            var textOptions = new JObject
+            {
+                ["format"] = new JObject
+                {
+                    ["type"] = "json_schema",
+                    ["json_schema"] = new JObject
+                    {
+                        ["name"] = "transcription_translation",
+                        ["schema"] = schema
+                    }
+                }
+            };
+
             return new JObject
             {
-                ["model"] = DefaultModel,
+                ["model"] = TranslationModel,
                 ["input"] = input,
                 ["temperature"] = 0,
-                ["text"] = new JObject
-                {
-                    ["format"] = responseFormat
-                }
+                ["text"] = textOptions
             };
         }
 
-        private static async Task<string> EncodeStreamToBase64Async(Stream audioStream, CancellationToken cancellationToken)
+        private static async Task<byte[]> ReadStreamToByteArrayAsync(Stream audioStream, CancellationToken cancellationToken)
         {
             if (audioStream == null)
             {
@@ -189,14 +240,14 @@ namespace AITranscriberWinApp.Services
 
                 if (audioStream is MemoryStream memoryStream)
                 {
-                    return Convert.ToBase64String(memoryStream.ToArray());
+                    return memoryStream.ToArray();
                 }
             }
 
             using (var buffer = new MemoryStream())
             {
                 await audioStream.CopyToAsync(buffer, 81920, cancellationToken).ConfigureAwait(false);
-                return Convert.ToBase64String(buffer.ToArray());
+                return buffer.ToArray();
             }
         }
 
@@ -220,7 +271,7 @@ namespace AITranscriberWinApp.Services
             }
         }
 
-        private static TranscriptionResult ParseResponse(string responseBody)
+        private static TranscriptionResult ParseResponse(string responseBody, string fallbackTranscript)
         {
             var json = JObject.Parse(responseBody);
             var textPayload = ExtractOutputText(json);
@@ -235,7 +286,7 @@ namespace AITranscriberWinApp.Services
                 var parsed = JObject.Parse(textPayload);
                 return new TranscriptionResult
                 {
-                    Text = parsed.Value<string>("transcript") ?? string.Empty,
+                    Text = parsed.Value<string>("transcript") ?? fallbackTranscript ?? string.Empty,
                     Translation = parsed.Value<string>("translation") ?? string.Empty
                 };
             }
@@ -278,16 +329,15 @@ namespace AITranscriberWinApp.Services
                 ?? string.Empty;
         }
 
-        private static string GetAudioFormat(string fileName)
+        private static string GetMimeType(string fileName)
         {
             var extension = Path.GetExtension(fileName);
-            if (!string.IsNullOrWhiteSpace(extension) && AudioFormats.TryGetValue(extension, out var format))
+            if (!string.IsNullOrWhiteSpace(extension) && AudioMimeTypes.TryGetValue(extension, out var mimeType))
             {
-                return format;
+                return mimeType;
             }
 
-            return "wav";
+            return "audio/wav";
         }
-
     }
 }
