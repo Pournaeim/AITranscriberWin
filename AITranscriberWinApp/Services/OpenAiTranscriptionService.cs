@@ -210,11 +210,8 @@ namespace AITranscriberWinApp.Services
                 ["format"] = new JObject
                 {
                     ["type"] = "json_schema",
-                    ["json_schema"] = new JObject
-                    {
-                        ["name"] = "transcription_translation",
-                        ["schema"] = schema
-                    }
+                    ["name"] = "transcription_translation",
+                    ["schema"] = schema
                 }
             };
 
