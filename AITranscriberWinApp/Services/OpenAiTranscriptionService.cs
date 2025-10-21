@@ -182,16 +182,6 @@ namespace AITranscriberWinApp.Services
                 ["required"] = new JArray("transcript", "translation")
             };
 
-            var responseFormat = new JObject
-            {
-                ["type"] = "json_schema",
-                ["json_schema"] = new JObject
-                {
-                    ["name"] = "transcription_translation",
-                    ["schema"] = schema
-                }
-            };
-
             var contentArray = new JArray
             {
                 new JObject
@@ -215,12 +205,25 @@ namespace AITranscriberWinApp.Services
                 }
             };
 
+            var textOptions = new JObject
+            {
+                ["format"] = new JObject
+                {
+                    ["type"] = "json_schema",
+                    ["json_schema"] = new JObject
+                    {
+                        ["name"] = "transcription_translation",
+                        ["schema"] = schema
+                    }
+                }
+            };
+
             return new JObject
             {
                 ["model"] = TranslationModel,
                 ["input"] = input,
                 ["temperature"] = 0,
-                ["response_format"] = responseFormat
+                ["text"] = textOptions
             };
         }
 
