@@ -66,24 +66,12 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
             }
 
-            MemoryStream ownedStream = null;
-            if (!audioStream.CanSeek)
-            {
-                ownedStream = new MemoryStream();
-                await audioStream.CopyToAsync(ownedStream, 81920, cancellationToken).ConfigureAwait(false);
-                ownedStream.Position = 0;
-                audioStream = ownedStream;
-            }
-            else
-            {
-                audioStream.Position = 0;
-            }
-
+            var (uploadStream, ownsStream) = await PrepareUploadStreamAsync(audioStream, cancellationToken).ConfigureAwait(false);
             string uploadedFileId = null;
 
             try
             {
-                uploadedFileId = await UploadAudioFileAsync(audioStream, fileName, apiKey, cancellationToken).ConfigureAwait(false);
+                uploadedFileId = await UploadAudioFileAsync(uploadStream, fileName, apiKey, cancellationToken).ConfigureAwait(false);
                 var payload = BuildRequestPayload(uploadedFileId);
 
                 using (var request = new HttpRequestMessage(HttpMethod.Post, ResponsesEndpoint))
@@ -91,101 +79,7 @@ namespace AITranscriberWinApp.Services
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
                     request.Content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
 
-            var schema = new JObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JObject
-                {
-                    ["transcript"] = new JObject
-                    {
-                        ["type"] = "string",
-                        ["description"] = "English transcription of the supplied audio."
-                    },
-                    ["translation"] = new JObject
-                    {
-                        ["type"] = "string",
-                        ["description"] = "Persian translation of the audio content."
-                    }
-                },
-                ["required"] = new JArray("transcript", "translation")
-            };
-
-            var responseFormat = new JObject
-            {
-                ["type"] = "json_schema",
-                ["json_schema"] = new JObject
-                {
-                    ["name"] = "transcription_translation",
-                    ["schema"] = schema
-                }
-            };
-
-            var contentArray = new JArray
-            {
-                new JObject
-                {
-                    ["type"] = "input_text",
-                    ["text"] = InstructionText
-                },
-                new JObject
-                {
-                    ["type"] = "input_file",
-                    ["file_id"] = fileId
-                }
-            };
-
-            var input = new JArray
-            {
-                new JObject
-                {
-                    ["role"] = "user",
-                    ["content"] = contentArray
-                }
-            };
-
-            return new JObject
-            {
-                ["model"] = DefaultModel,
-                ["input"] = input,
-                ["temperature"] = 0,
-                ["text"] = new JObject
-                {
-                    ["format"] = responseFormat
-                }
-            };
-        }
-
-        private async Task<string> UploadAudioFileAsync(Stream audioStream, string fileName, string apiKey, CancellationToken cancellationToken)
-        {
-            if (audioStream == null)
-            {
-                throw new ArgumentNullException(nameof(audioStream));
-            }
-
-            var uploadStream = new MemoryStream();
-            if (audioStream.CanSeek)
-            {
-                audioStream.Position = 0;
-            }
-
-            await audioStream.CopyToAsync(uploadStream, 81920, cancellationToken).ConfigureAwait(false);
-            uploadStream.Position = 0;
-
-            using (var content = new MultipartFormDataContent())
-            {
-                content.Add(new StringContent("assistants"), "purpose");
-
-                var streamContent = new StreamContent(uploadStream);
-                streamContent.Headers.ContentType = new MediaTypeHeaderValue(GetMimeType(fileName));
-                content.Add(streamContent, "file", string.IsNullOrWhiteSpace(fileName) ? "audio.wav" : fileName);
-
-                using (var request = new HttpRequestMessage(HttpMethod.Post, FilesEndpoint))
-                {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                    request.Content = content;
-
-                    if (!response.IsSuccessStatusCode)
+                    using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false))
                     {
                         var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
@@ -195,8 +89,8 @@ namespace AITranscriberWinApp.Services
                             var status = (int)response.StatusCode;
                             var reason = response.ReasonPhrase;
                             var message = string.IsNullOrWhiteSpace(errorDetail)
-                                ? $"OpenAI file upload failed ({status} {reason})."
-                                : $"OpenAI file upload failed ({status} {reason}): {errorDetail}";
+                                ? $"OpenAI transcription failed ({status} {reason})."
+                                : $"OpenAI transcription failed ({status} {reason}): {errorDetail}";
 
                             throw new InvalidOperationException(message);
                         }
@@ -207,7 +101,10 @@ namespace AITranscriberWinApp.Services
             }
             finally
             {
-                ownedStream?.Dispose();
+                if (ownsStream)
+                {
+                    uploadStream.Dispose();
+                }
 
                 if (!string.IsNullOrWhiteSpace(uploadedFileId))
                 {
@@ -302,20 +199,16 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentNullException(nameof(audioStream));
             }
 
-            var uploadStream = new MemoryStream();
-            if (audioStream.CanSeek)
-            {
-                audioStream.Position = 0;
-            }
-
-            await audioStream.CopyToAsync(uploadStream, 81920, cancellationToken).ConfigureAwait(false);
-            uploadStream.Position = 0;
-
             using (var content = new MultipartFormDataContent())
             {
                 content.Add(new StringContent("assistants"), "purpose");
 
-                var streamContent = new StreamContent(uploadStream);
+                if (audioStream.CanSeek)
+                {
+                    audioStream.Position = 0;
+                }
+
+                var streamContent = new StreamContent(new NonDisposingStream(audioStream));
                 streamContent.Headers.ContentType = new MediaTypeHeaderValue(GetMimeType(fileName));
                 content.Add(streamContent, "file", string.IsNullOrWhiteSpace(fileName) ? "audio.wav" : fileName);
 
@@ -353,6 +246,26 @@ namespace AITranscriberWinApp.Services
                     return ParseResponse(body);
                 }
             }
+        }
+
+        private static async Task<(Stream Stream, bool OwnsStream)> PrepareUploadStreamAsync(Stream audioStream, CancellationToken cancellationToken)
+        {
+            if (audioStream == null)
+            {
+                throw new ArgumentNullException(nameof(audioStream));
+            }
+        }
+
+            if (audioStream.CanSeek)
+            {
+                audioStream.Position = 0;
+                return (audioStream, false);
+            }
+
+            var buffer = new MemoryStream();
+            await audioStream.CopyToAsync(buffer, 81920, cancellationToken).ConfigureAwait(false);
+            buffer.Position = 0;
+            return (buffer, true);
         }
 
         private async Task DeleteFileAsync(string fileId, string apiKey, CancellationToken cancellationToken)
@@ -477,6 +390,99 @@ namespace AITranscriberWinApp.Services
             }
 
             return "wav";
+        }
+
+        private sealed class NonDisposingStream : Stream
+        {
+            private readonly Stream _inner;
+
+            public NonDisposingStream(Stream inner)
+            {
+                _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+            }
+
+            public override bool CanRead => _inner.CanRead;
+            public override bool CanSeek => _inner.CanSeek;
+            public override bool CanWrite => _inner.CanWrite;
+            public override bool CanTimeout => _inner.CanTimeout;
+            public override long Length => _inner.Length;
+
+            public override long Position
+            {
+                get => _inner.Position;
+                set => _inner.Position = value;
+            }
+
+            public override int ReadTimeout
+            {
+                get => _inner.ReadTimeout;
+                set => _inner.ReadTimeout = value;
+            }
+
+            public override int WriteTimeout
+            {
+                get => _inner.WriteTimeout;
+                set => _inner.WriteTimeout = value;
+            }
+
+            public override void Flush()
+            {
+                _inner.Flush();
+            }
+
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                return _inner.Read(buffer, offset, count);
+            }
+
+            public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            {
+                return _inner.ReadAsync(buffer, offset, count, cancellationToken);
+            }
+
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
+            public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                return _inner.ReadAsync(buffer, cancellationToken);
+            }
+#endif
+
+            public override long Seek(long offset, SeekOrigin origin)
+            {
+                return _inner.Seek(offset, origin);
+            }
+
+            public override void SetLength(long value)
+            {
+                _inner.SetLength(value);
+            }
+
+            public override void Write(byte[] buffer, int offset, int count)
+            {
+                _inner.Write(buffer, offset, count);
+            }
+
+            public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            {
+                return _inner.WriteAsync(buffer, offset, count, cancellationToken);
+            }
+
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
+            public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                return _inner.WriteAsync(buffer, cancellationToken);
+            }
+#endif
+
+            public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+            {
+                return _inner.CopyToAsync(destination, bufferSize, cancellationToken);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                // Intentionally do not dispose the inner stream so callers retain ownership.
+            }
         }
     }
 }
