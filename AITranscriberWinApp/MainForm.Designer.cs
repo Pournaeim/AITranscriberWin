@@ -33,6 +33,7 @@ namespace AITranscriberWinApp
             this.btnSaveKey = new System.Windows.Forms.Button();
             this.btnToggleRecording = new System.Windows.Forms.Button();
             this.btnSelectAudio = new System.Windows.Forms.Button();
+            this.btnUploadWhisper = new System.Windows.Forms.Button();
             this.lblStatus = new System.Windows.Forms.Label();
             this.txtTranscript = new System.Windows.Forms.TextBox();
             this.txtTranslation = new System.Windows.Forms.TextBox();
@@ -94,6 +95,17 @@ namespace AITranscriberWinApp
             this.btnSelectAudio.Text = "Transcribe File...";
             this.btnSelectAudio.UseVisualStyleBackColor = true;
             this.btnSelectAudio.Click += new System.EventHandler(this.btnSelectAudio_Click);
+            // 
+            // btnUploadWhisper
+            // 
+            this.btnUploadWhisper.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnUploadWhisper.Location = new System.Drawing.Point(297, 45);
+            this.btnUploadWhisper.Name = "btnUploadWhisper";
+            this.btnUploadWhisper.Size = new System.Drawing.Size(123, 32);
+            this.btnUploadWhisper.TabIndex = 11;
+            this.btnUploadWhisper.Text = "Upload (Whisper)";
+            this.btnUploadWhisper.UseVisualStyleBackColor = true;
+            this.btnUploadWhisper.Click += new System.EventHandler(this.btnUploadWhisper_Click);
             // 
             // lblStatus
             // 
@@ -165,6 +177,7 @@ namespace AITranscriberWinApp
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(720, 500);
+            this.Controls.Add(this.btnUploadWhisper);
             this.Controls.Add(this.btnSelectAudio);
             this.Controls.Add(this.btnOpenOutputFolder);
             this.Controls.Add(this.lblTranslation);
@@ -193,6 +206,7 @@ namespace AITranscriberWinApp
         private System.Windows.Forms.Button btnSaveKey;
         private System.Windows.Forms.Button btnToggleRecording;
         private System.Windows.Forms.Button btnSelectAudio;
+        private System.Windows.Forms.Button btnUploadWhisper;
         private System.Windows.Forms.Label lblStatus;
         private System.Windows.Forms.TextBox txtTranscript;
         private System.Windows.Forms.TextBox txtTranslation;
