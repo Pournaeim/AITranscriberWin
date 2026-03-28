@@ -15,6 +15,7 @@ namespace AITranscriberWinApp.Services
     public class OpenAiTranscriptionService
     {
         private const string TranscriptionModel = "gpt-4o-mini-transcribe";
+        private const string WhisperModel = "whisper-1";
         private const string TranslationModel = "gpt-4o-mini";
         private const string TranslationInstruction = "You are given an English transcription of an audio clip. Provide a natural Persian translation. Return a JSON object with the fields 'transcript' (the original English text) and 'translation' (the Persian translation).";
         private static readonly Uri ResponsesEndpoint = new Uri("https://api.openai.com/v1/responses");
@@ -67,7 +68,7 @@ namespace AITranscriberWinApp.Services
                 throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
             }
 
-            var transcript = await RequestTranscriptionAsync(audioStream, fileName, apiKey, cancellationToken).ConfigureAwait(false);
+            var transcript = await RequestTranscriptionAsync(audioStream, fileName, TranscriptionModel, apiKey, cancellationToken).ConfigureAwait(false);
 
             if (string.IsNullOrWhiteSpace(transcript))
             {
@@ -77,7 +78,25 @@ namespace AITranscriberWinApp.Services
             return await RequestTranslationAsync(transcript, apiKey, cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<string> RequestTranscriptionAsync(Stream audioStream, string fileName, string apiKey, CancellationToken cancellationToken)
+        public async Task<string> TranscribeWithWhisperAsync(string audioPath, string apiKey, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(audioPath))
+            {
+                throw new ArgumentException("Audio path is required.", nameof(audioPath));
+            }
+
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new ArgumentException("OpenAI API key is required.", nameof(apiKey));
+            }
+
+            using (var fileStream = new FileStream(audioPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
+            {
+                return await RequestTranscriptionAsync(fileStream, Path.GetFileName(audioPath), WhisperModel, apiKey, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private async Task<string> RequestTranscriptionAsync(Stream audioStream, string fileName, string transcriptionModel, string apiKey, CancellationToken cancellationToken)
         {
             var audioBytes = await ReadStreamToByteArrayAsync(audioStream, cancellationToken).ConfigureAwait(false);
             var mimeType = GetMimeType(fileName);
@@ -87,7 +106,7 @@ namespace AITranscriberWinApp.Services
                 var audioContent = new ByteArrayContent(audioBytes);
                 audioContent.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
                 content.Add(audioContent, "file", fileName);
-                content.Add(new StringContent(TranscriptionModel), "model");
+                content.Add(new StringContent(transcriptionModel), "model");
                 content.Add(new StringContent("json"), "response_format");
 
                 using (var request = new HttpRequestMessage(HttpMethod.Post, TranscriptionsEndpoint))

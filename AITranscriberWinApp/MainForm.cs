@@ -474,6 +474,65 @@ namespace AITranscriberWinApp
             }
         }
 
+        private async void btnUploadWhisper_Click(object sender, EventArgs e)
+        {
+            if (_isRecording)
+            {
+                MessageBox.Show("Stop the current recording before uploading another audio file.", "Recording In Progress", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var apiKey = GetApiKey();
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                MessageBox.Show("Please provide your OpenAI API key first.", "API Key Needed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "Audio Files (*.wav;*.mp3;*.m4a;*.aac)|*.wav;*.mp3;*.m4a;*.aac|All Files (*.*)|*.*";
+                dialog.Title = "Upload audio file for Whisper transcription";
+
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                btnUploadWhisper.Enabled = false;
+                btnSelectAudio.Enabled = false;
+                btnToggleRecording.Enabled = false;
+
+                try
+                {
+                    UpdateStatus("Uploading audio to Whisper...");
+                    txtTranscript.Clear();
+                    txtTranslation.Clear();
+
+                    using (var cts = new CancellationTokenSource())
+                    {
+                        var transcript = await _transcriptionService.TranscribeWithWhisperAsync(dialog.FileName, apiKey, cts.Token);
+                        txtTranscript.Text = string.IsNullOrWhiteSpace(transcript)
+                            ? "[No transcript returned]"
+                            : transcript;
+                    }
+
+                    UpdateStatus("Whisper transcription completed.");
+                }
+                catch (Exception ex)
+                {
+                    UpdateStatus("Whisper transcription failed.");
+                    MessageBox.Show($"Whisper transcription failed: {ex.Message}", "Whisper Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    btnUploadWhisper.Enabled = true;
+                    btnSelectAudio.Enabled = true;
+                    btnToggleRecording.Enabled = true;
+                }
+            }
+        }
+
         private void UpdateStatus(string message)
         {
             lblStatus.Text = $"Status: {message}";
